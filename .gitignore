@@ -1,0 +1,25 @@
+# Data & artifacts (large / regenerated)
+data/raw/
+data/processed/
+data/degraded/
+weights/
+results/predictions/
+results/error_cases/
+results/real_world_outputs/
+runs/
+
+# Keep folder structure
+!**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

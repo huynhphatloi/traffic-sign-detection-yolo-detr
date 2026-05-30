@@ -1,0 +1,27 @@
+# Core
+numpy
+pandas
+pyyaml
+tqdm
+matplotlib
+seaborn
+opencv-python
+pillow
+scikit-learn
+
+# YOLO track
+ultralytics>=8.2.0
+
+# DETR track
+torch
+torchvision
+transformers>=4.40.0
+pycocotools
+albumentations
+
+# Evaluation / metrics
+torchmetrics
+
+# Real-time app (pick one; both listed)
+streamlit
+gradio
