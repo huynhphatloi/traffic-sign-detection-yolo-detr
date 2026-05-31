@@ -1,6 +1,6 @@
 # Datasets and model weights are kept on Google Drive, not in git (see README §Workflow).
-data/
-weights/
+/data/
+/weights/
 
 # Generated results — keep the directory structure (.gitkeep) but not the heavy outputs.
 results/**/*
