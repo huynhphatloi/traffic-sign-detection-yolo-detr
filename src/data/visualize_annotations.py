@@ -59,14 +59,18 @@ def visualize(split: str, n: int, root: Path = DATA_PROCESSED, seed: int = 0) ->
         raise FileNotFoundError(f"no images found for split '{split}' under {root}")
     random.Random(seed).shuffle(images)
     out_dir = ensure_dir(RESULTS_SAMPLES / f"annotated_{split}_samples")
-    for img_path in images[:n]:
+    saved = 0
+    for i, img_path in enumerate(images[:n], 1):
+        print(f"[visualize] {i}/{min(n, len(images))} — {img_path.name}", flush=True)
         img = cv2.imread(str(img_path))
         if img is None:
+            print(f"[visualize]   WARNING: could not read {img_path.name}", flush=True)
             continue
         boxes = parse_label_file(label_path_for(img_path, root))
         draw_boxes(img, boxes, class_names)
         cv2.imwrite(str(out_dir / img_path.name), img)
-    print(f"wrote {min(n, len(images))} annotated images to {out_dir}")
+        saved += 1
+    print(f"[visualize] done — wrote {saved} annotated images to {out_dir}", flush=True)
     return out_dir
 
 

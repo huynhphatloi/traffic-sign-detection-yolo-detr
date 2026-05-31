@@ -108,8 +108,15 @@ def inspect(root: Path = DATA_PROCESSED) -> pd.DataFrame:
     rows = []
     for split in SPLITS:
         imgs = list_images(split, root)
-        n_labels = sum(1 for _, lp in iter_pairs(split, root) if lp.exists())
-        n_boxes = sum(len(parse_label_file(lp)) for _, lp in iter_pairs(split, root))
+        print(f"[inspect] {split}: {len(imgs)} images — counting labels...", flush=True)
+        n_labels, n_boxes = 0, 0
+        for i, (_, lp) in enumerate(iter_pairs(split, root), 1):
+            if lp.exists():
+                n_labels += 1
+                n_boxes += len(parse_label_file(lp))
+            if i % 500 == 0:
+                print(f"[inspect]   {split}: {i}/{len(imgs)} done", flush=True)
+        print(f"[inspect] {split}: {n_labels} label files, {n_boxes} boxes", flush=True)
         rows.append(
             {
                 "split": split,
