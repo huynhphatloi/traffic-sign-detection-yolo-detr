@@ -22,6 +22,6 @@ albumentations
 # Evaluation / metrics
 torchmetrics
 
-# Real-time app (pick one; both listed)
-streamlit
+# Phase 2 app (Gradio + Hugging Face)
 gradio
+huggingface_hub

@@ -1,140 +1,96 @@
-# Traffic Signs Detection for Self-Driving Cars: YOLO vs DETR
+# Traffic Sign Detection for Self-Driving Cars: YOLO vs DETR
 
-A comparative study of **YOLO** (convolutional) and **DETR** (transformer) for traffic-sign
-object detection on the **[pkdarabi/cardetection](https://www.kaggle.com/datasets/pkdarabi/cardetection/data)**
-("Traffic Signs Detection") dataset, with a real-time detection app and a robustness analysis
-under simulated driving conditions.
+Robust and data-efficient **traffic-sign object detection** comparing **YOLO** (one-stage CNN) and
+**DETR** (transformer) on the teacher-provided Kaggle dataset
+**[pkdarabi/cardetection](https://www.kaggle.com/datasets/pkdarabi/cardetection/data)**
+(*Traffic Signs Detection*). Despite the URL name, the task is **traffic-sign** detection, not car
+detection. **15 native classes** (Green/Red Light, Speed Limit 10–120, Stop) — kept as-is, no remapping.
 
-> **Research question:** How do YOLO and DETR compare for traffic-sign detection in self-driving
-> scenarios in terms of detection accuracy, inference speed, robustness, and real-time deployment
-> suitability?
+> **Research question:** How can traffic-sign detection for self-driving car scenarios be made more
+> **robust** and **data-efficient** using YOLO and DETR?
 
-Single dataset, **native 15 classes** (Red/Green Light, Stop, Speed Limit 10–120). No
-multi-dataset mixing — see *Future work*.
-
----
-
-## Team
-
-| Member | Role | Owns |
-|--------|------|------|
-| **Loi** | Team lead | Data pipeline · EDA · evaluation & comparison · app integration · `notebooks/00`, `01`, `04` |
-| **Vinh** | YOLO track | YOLO training/tuning/eval · backend inference · real-time optimization · `notebooks/02`, `05`, `06` |
-| **Tu** | DETR track | DETR training/tuning/eval · robustness analysis · error analysis · app UI · `notebooks/03`, `07`, `08` |
-
-**Full per-member task breakdown, dependencies, and milestones: see [TEAM.md](TEAM.md).**
+**Team:** Loi (lead · data pipeline · YOLO · integration) · Vinh (EDA · data mining) · Tu (data
+quality · DETR · robustness plan).
 
 ---
 
-## Deliverables
+## Status
 
-### Midterm — Dataset Analysis Report (`notebooks/01_eda`)
-Presentation + written report covering:
-- Dataset description (scale, source, format)
-- Class distribution and imbalance (most boxes are Speed Limits)
-- Bounding-box size statistics (small-object challenge)
-- Objects-per-image and sign-location heatmap
-- Data quality notes (occlusion, blur, label issues)
-- Preprocessing and augmentation plan
-- Planned YOLO-vs-DETR methodology for the final project
+**Phase 1 (Midterm) — in progress.** Dataset inspection, validation, EDA, YOLO + DETR baselines, and
+the initial comparison, plus the midterm report and slides.
 
-**Owner: Loi** (runs `01_eda.ipynb`, writes the report, all three present)
+**Phase 2 (Final) — planned.** Model improvement, robustness + data-efficiency experiments, error
+analysis, a **Gradio** app, and **Hugging Face Hub + Spaces** deployment. (`app/` and `huggingface/`
+are placeholders until then.)
 
-### Final — Working Application + Report
-Full model training, comparison, and the deployed real-time app:
-- YOLO baseline + ablations (Vinh)
-- DETR baseline (Tu)
-- Accuracy vs speed comparison table + chart (Loi)
-- Augmentation ablation and limited-data study (Vinh)
-- Robustness analysis under simulated driving conditions (Tu)
-- Error analysis and per-class AP breakdown (Tu)
-- Real-time Streamlit demo video (all three)
+## Repository layout
 
----
+```
+configs/        data.yaml (Ultralytics) + classes.yaml (15 classes, auto-synced from the dataset)
+notebooks/      00 setup · 01 inspection · 02 EDA · 03 data quality · 04 YOLO · 05 DETR · 06 comparison
+src/data/       inspect_dataset · validate_labels · visualize_annotations · convert_to_coco
+src/eda/        class_distribution · bbox_statistics · image_statistics · heatmap_analysis
+src/training/   train_yolo · train_detr
+src/evaluation/ evaluate_yolo · evaluate_detr · benchmark_fps · compare_models
+src/utils/      paths (central path registry) · plotting
+results/        eda/ samples/ tables/ metrics/ plots/   (generated; gitignored)
+reports/        midterm_report.md            slides/  midterm_presentation_outline.md
+app/ huggingface/   Phase 2 placeholders
+```
 
-## What's in here
-| Area | Module(s) |
-| ---- | --------- |
-| Data prep | `src/data/prepare_dataset.py` (Roboflow → Ultralytics + verify), `convert_to_coco.py` (DETR), `degrade.py` (robustness conditions), `visualize_annotations.py` |
-| Training | `src/training/train_yolo.py` (`--aug`, `--fraction`), `train_detr.py` |
-| Evaluation | `evaluate_yolo.py`, `evaluate_detr.py`, `benchmark_fps.py`, `robustness_eval.py`, `compare_models.py` |
-| EDA / viz | `src/visualization/` (class balance, box stats, heatmap, predictions, error gallery) |
-| App | `src/app/app.py` (Streamlit real-time demo + warning panel) |
-| Notebooks | `notebooks/00`–`08` — thin orchestration over the `src` modules |
+Notebooks are **thin orchestration** over `src/`; every script is also runnable as
+`python -m src.<pkg>.<module>`.
 
 ## Setup
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
-Training needs a GPU — do the heavy work on Colab (`notebooks/00_colab_setup.ipynb`) and keep your
-local machine for the EDA and the webcam demo.
+
+**Training needs a GPU** — run the training notebooks on **Colab** (`notebooks/00_colab_setup.ipynb`).
+Inspection, validation, and EDA run fine on a laptop (CPU).
 
 ## Workflow
+
 ```bash
-# 1. Get the dataset (Kaggle API) and build it
-kaggle datasets download -d pkdarabi/cardetection -p data/raw/cardetection --unzip
-python -m src.data.prepare_dataset --write-configs   # normalize layout + sync configs from data.yaml
-python -m src.data.convert_to_coco                   # COCO JSON for DETR
-python -m src.data.visualize_annotations --yolo-root data/processed/yolo/cardetection --split val
+# 1. Get the dataset (Kaggle API) into data/raw, then place the Roboflow export at
+#    data/processed/cardetection/{train,valid,test}/{images,labels}
+kaggle datasets download -d pkdarabi/cardetection -p data/raw --unzip
 
-# 2. EDA (midterm core)
-python -m src.visualization.plot_eda --yolo-root data/processed/yolo/cardetection --name cardetection
+# 2. Inspect + sync configs (writes results/tables/dataset_summary.csv, regenerates classes.yaml)
+python -m src.data.inspect_dataset --write-configs
 
-# 3. Train baselines
-python -m src.training.train_yolo --data configs/cardetection.yaml --name yolo_baseline
-python -m src.training.train_detr --coco data/processed/coco --split cardetection --name detr_baseline
+# 3. Validate annotations (writes results/tables/data_quality_report.csv)
+python -m src.data.validate_labels
 
-# 4. Evaluate + compare
-python -m src.evaluation.evaluate_yolo --weights weights/yolo/yolo_baseline/best.pt --data configs/cardetection.yaml --tag yolo_baseline
-python -m src.evaluation.evaluate_detr --model weights/detr/detr_baseline --coco data/processed/coco --split cardetection --tag detr_baseline
-python -m src.evaluation.benchmark_fps --weights weights/yolo/yolo_baseline/best.pt
-python -m src.evaluation.compare_models --metrics-dir results/metrics --out results/plots
+# 4. Annotated samples (required before training)
+python -m src.data.visualize_annotations --split train --n 12
 
-# 5. Ablations
-python -m src.training.train_yolo --data configs/cardetection.yaml --aug strong   --name yolo_aug_strong
-python -m src.training.train_yolo --data configs/cardetection.yaml --fraction 0.25 --name yolo_25pct
+# 5. EDA (writes results/eda/*.png + results/tables/*.csv)
+python -m src.eda.class_distribution
+python -m src.eda.bbox_statistics
+python -m src.eda.image_statistics
+python -m src.eda.heatmap_analysis
 
-# 6. Robustness (simulate driving conditions, then re-evaluate)
-python -m src.data.degrade --split test --conditions lowlight,motionblur,noise,smallsigns --severity 0.5
-python -m src.evaluation.robustness_eval --weights weights/yolo/yolo_baseline/best.pt \
-    --clean-root data/processed/yolo/cardetection --degraded-root data/degraded --tag yolo_baseline
+# 6. Baselines (GPU / Colab)
+python -m src.training.train_yolo --epochs 30 --name yolo_baseline
+python -m src.evaluation.evaluate_yolo --weights weights/yolo/yolo_baseline/best.pt --split test
 
-# 7. Error analysis
-python -m src.visualization.error_gallery --weights weights/yolo/yolo_baseline/best.pt \
-    --yolo-root data/processed/yolo/cardetection --split test --n 20
+python -m src.data.convert_to_coco
+python -m src.training.train_detr --epochs 10 --batch 2 --name detr_baseline
+python -m src.evaluation.evaluate_detr --model-dir weights/detr/detr_baseline --split test
+
+# 7. Initial comparison
+python -m src.evaluation.compare_models
 ```
 
-## Real-time app
-```bash
-streamlit run src/app/app.py
-```
-Webcam / uploaded video; shows boxes, labels, confidence, live FPS, per-class counts, a
-driving-style **warning panel**, screenshot and annotated-video save.
+## Data & weights policy
 
-## Notebooks
-`00_colab_setup` → `01_eda` → `02_yolo_baseline` → `03_detr_baseline` → `04_comparison` →
-`05_augmentation_ablation` → `06_limited_data` → `07_robustness` → `08_error_analysis`.
-Each (except 00) starts with a setup cell that locates the project root in Colab or locally.
-
-## Report structure
-**Midterm — dataset analysis:** description, annotation format, class distribution/imbalance,
-bounding-box statistics, small-object analysis, data-quality notes, preprocessing + augmentation
-plan, and the planned YOLO-vs-DETR methodology (`notebooks/01_eda`).
-
-**Final — models + app:** YOLO training, DETR training, accuracy comparison, speed comparison,
-augmentation ablation, limited-data study, robustness analysis, error analysis, the real-time app,
-and a demo video.
-
-## Execution priority
-| Priority | Task |
-| -------- | ---- |
-| P0 | Download dataset · `prepare_dataset` (YOLO) · `convert_to_coco` (DETR) · YOLO + DETR baselines |
-| P1 | Evaluate mAP/FPS/size · build real-time app · error analysis |
-| P2 | Augmentation ablation · limited-data study |
-| P3 | Robustness degradation tests |
+`data/`, `weights/`, and heavy `results/` outputs are **gitignored** — keep them on Google Drive.
+Only code, notebooks, configs, small tables, the report, and slides are committed.
 
 ## Future work
-Extend to full road-scene perception (vehicles, pedestrians, traffic lights, lane markings) and to
-other regions' signs (e.g. Vietnamese). Out of scope here to keep the project clean: traffic signs only.
-# traffic-sign-detection-yolo-detr
+
+Optional Phase 2 extension: Vietnamese street traffic-sign images/video for real-world testing. The
+teacher dataset stays the **main required dataset** — not replaced.

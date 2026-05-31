@@ -1,15 +1,13 @@
-"""Train an Ultralytics YOLO detector on the cardetection dataset (YOLO baseline).
+"""YOLO baseline training (plan §8.5).
 
-Also supports the augmentation ablation via --aug {none,standard,strong} and the
-limited-data study via --fraction.
+Trains an Ultralytics YOLOv8 model on the traffic-sign dataset. Defaults match the midterm
+baseline: YOLOv8n, pretrained, imgsz 640, 30 epochs. Horizontal flip is OFF — many signs are
+directional (left/right turn, arrows) and mirroring would corrupt their meaning.
 
-After training, the best checkpoint is copied to weights/yolo/<name>/best.pt so the rest
-of the pipeline (evaluate, robustness, app) can find it predictably.
+Needs a GPU; run on Colab. Copies the best checkpoint to weights/yolo/<name>/best.pt.
 
-Examples:
-  python -m src.training.train_yolo --data configs/cardetection.yaml --name yolo_baseline
-  python -m src.training.train_yolo --data configs/cardetection.yaml --aug strong --name yolo_aug_strong
-  python -m src.training.train_yolo --data configs/cardetection.yaml --fraction 0.25 --name yolo_25pct
+CLI:
+    python -m src.training.train_yolo --model yolov8n.pt --epochs 30 --name yolo_baseline
 """
 from __future__ import annotations
 
@@ -17,59 +15,60 @@ import argparse
 import shutil
 from pathlib import Path
 
-# Augmentation presets. YOLO flips are OFF by default because many signs are directional
-# (plan section 14): flipping would create unrealistic mirror-image signs.
-AUG_PRESETS = {
-    "none": dict(hsv_h=0, hsv_s=0, hsv_v=0, translate=0, scale=0, fliplr=0,
-                 mosaic=0, mixup=0, erasing=0),
-    "standard": dict(hsv_h=0.015, hsv_s=0.5, hsv_v=0.4, translate=0.1, scale=0.4,
-                     fliplr=0, mosaic=0.5, mixup=0, erasing=0.2),
-    "strong": dict(hsv_h=0.02, hsv_s=0.7, hsv_v=0.5, translate=0.15, scale=0.6,
-                   fliplr=0, mosaic=1.0, mixup=0.1, erasing=0.4),
-}
+from src.utils.paths import DATA_YAML, WEIGHTS_YOLO, ensure_dir
+
+
+def train(
+    model: str = "yolov8n.pt",
+    data: Path = DATA_YAML,
+    epochs: int = 30,
+    imgsz: int = 640,
+    batch: int = 16,
+    name: str = "yolo_baseline",
+    device: str | None = None,
+):
+    """Train YOLO and return (results, best_checkpoint_path)."""
+    from ultralytics import YOLO  # imported lazily so the module loads without ultralytics
+
+    net = YOLO(model)  # pretrained weights
+    results = net.train(
+        data=str(data),
+        epochs=epochs,
+        imgsz=imgsz,
+        batch=batch,
+        name=name,
+        device=device,
+        fliplr=0.0,   # directional signs — never mirror horizontally
+        flipud=0.0,
+        verbose=True,
+    )
+
+    # Ultralytics writes to runs/detect/<name>/weights/best.pt; copy into our weights/ tree.
+    run_dir = Path(results.save_dir) if hasattr(results, "save_dir") else net.trainer.save_dir
+    src_best = Path(run_dir) / "weights" / "best.pt"
+    dst_dir = ensure_dir(WEIGHTS_YOLO / name)
+    dst_best = dst_dir / "best.pt"
+    if src_best.exists():
+        shutil.copy2(src_best, dst_best)
+        # training curves PNG produced by ultralytics
+        curves = Path(run_dir) / "results.png"
+        if curves.exists():
+            shutil.copy2(curves, dst_dir / "training_curves.png")
+        print(f"saved checkpoint -> {dst_best}")
+    return results, dst_best
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--data", required=True, help="path to an Ultralytics data .yaml")
-    ap.add_argument("--model", default="yolov8s.pt", help="base weights (yolov8n/s, yolo11n/s ...)")
-    ap.add_argument("--name", required=True, help="run name; weights saved to weights/yolo/<name>")
-    ap.add_argument("--epochs", type=int, default=100)
+    ap = argparse.ArgumentParser(description="Train YOLO baseline (plan §8.5).")
+    ap.add_argument("--model", default="yolov8n.pt")
+    ap.add_argument("--data", type=Path, default=DATA_YAML)
+    ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16)
-    ap.add_argument("--lr0", type=float, default=0.01)
-    ap.add_argument("--aug", choices=list(AUG_PRESETS), default="standard")
-    ap.add_argument("--fraction", type=float, default=1.0, help="limited-label fraction (0-1]")
-    ap.add_argument("--device", default=None, help="e.g. 0 / cpu (default: auto)")
-    ap.add_argument("--project", default="runs/yolo")
+    ap.add_argument("--name", default="yolo_baseline")
+    ap.add_argument("--device", default=None, help="e.g. 0 for GPU, cpu for CPU")
     args = ap.parse_args()
-
-    from ultralytics import YOLO  # imported lazily so --help works without the dep
-
-    model = YOLO(args.model)
-    results = model.train(
-        data=args.data,
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        batch=args.batch,
-        lr0=args.lr0,
-        fraction=args.fraction,
-        device=args.device,
-        project=args.project,
-        name=args.name,
-        exist_ok=True,
-        **AUG_PRESETS[args.aug],
-    )
-
-    # Mirror the best checkpoint into weights/yolo/<name>/best.pt for downstream scripts.
-    save_dir = Path(results.save_dir)
-    best = save_dir / "weights" / "best.pt"
-    dest = Path("weights/yolo") / args.name
-    dest.mkdir(parents=True, exist_ok=True)
-    if best.exists():
-        shutil.copy2(best, dest / "best.pt")
-        print(f"[train_yolo] best weights -> {dest / 'best.pt'}")
-    print(f"[train_yolo] run dir: {save_dir}")
+    train(args.model, args.data, args.epochs, args.imgsz, args.batch, args.name, args.device)
 
 
 if __name__ == "__main__":

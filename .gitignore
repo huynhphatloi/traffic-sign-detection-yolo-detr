@@ -1,25 +1,24 @@
-# Data & artifacts (large / regenerated)
-data/raw/
-data/processed/
-data/degraded/
+# Datasets and model weights are kept on Google Drive, not in git (see README §Workflow).
+data/
 weights/
-results/predictions/
-results/error_cases/
-results/real_world_outputs/
-runs/
 
-# Keep folder structure
-!**/.gitkeep
+# Generated results — keep the directory structure (.gitkeep) but not the heavy outputs.
+results/**/*
+!results/**/.gitkeep
+
+# Model checkpoints anywhere
+*.pt
+*.pth
+*.onnx
 
 # Python
 __pycache__/
 *.py[cod]
-.ipynb_checkpoints/
 .venv/
 venv/
-env/
+.ipynb_checkpoints/
 
 # OS / editor
 .DS_Store
-.vscode/
 .idea/
+.vscode/

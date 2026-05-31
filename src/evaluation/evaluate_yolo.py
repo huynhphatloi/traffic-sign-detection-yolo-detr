@@ -1,11 +1,11 @@
-"""Evaluate a trained YOLO checkpoint and save unified metrics JSON.
+"""Evaluate a trained YOLO checkpoint (plan §8.5).
 
-Writes results/metrics/<tag>.json with mAP@0.5, mAP@0.5:0.95, precision, recall, and
-per-class AP — the schema compare_models.py expects.
+Runs Ultralytics validation on a split and writes the standard metrics (mAP@0.5,
+mAP@0.5:0.95, precision, recall) plus model size to a JSON. FPS/latency come from
+benchmark_fps and are merged in here so yolo_baseline.json is the single YOLO metrics file.
 
-Example:
-  python -m src.evaluation.evaluate_yolo --weights weights/yolo/yolo_baseline/best.pt \
-      --data configs/cardetection.yaml --split test --tag yolo_baseline
+CLI:
+    python -m src.evaluation.evaluate_yolo --weights weights/yolo/yolo_baseline/best.pt --split test
 """
 from __future__ import annotations
 
@@ -13,49 +13,47 @@ import argparse
 import json
 from pathlib import Path
 
+from src.evaluation.benchmark_fps import benchmark_yolo
+from src.utils.paths import DATA_YAML, RESULTS_METRICS, WEIGHTS_YOLO, ensure_dir
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", required=True)
-    ap.add_argument("--data", required=True)
-    ap.add_argument("--split", default="test", choices=["train", "val", "test"])
-    ap.add_argument("--imgsz", type=int, default=640)
-    ap.add_argument("--device", default=None)
-    ap.add_argument("--tag", default=None, help="metrics filename (default: weights parent name)")
-    ap.add_argument("--out", type=Path, default=Path("results/metrics"))
-    args = ap.parse_args()
 
+def evaluate(weights: Path, data: Path = DATA_YAML, split: str = "test",
+             imgsz: int = 640, device: str | None = None, with_fps: bool = True) -> dict:
     from ultralytics import YOLO
 
-    model = YOLO(args.weights)
-    res = model.val(data=args.data, split=args.split, imgsz=args.imgsz, device=args.device)
+    model = YOLO(str(weights))
+    metrics = model.val(data=str(data), split=split, imgsz=imgsz, device=device)
 
-    names = res.names  # {id: name}
-    per_class_ap = {}
-    try:
-        for i, cid in enumerate(res.ap_class_index):
-            per_class_ap[names[int(cid)]] = float(res.box.ap50[i])
-    except Exception:
-        pass
-
-    metrics = {
-        "model": "yolo",
-        "weights": str(args.weights),
-        "data": str(args.data),
-        "split": args.split,
-        "map50": float(res.box.map50),
-        "map50_95": float(res.box.map),
-        "precision": float(res.box.mp),
-        "recall": float(res.box.mr),
-        "per_class_ap50": per_class_ap,
+    result = {
+        "model": "YOLO",
+        "weights": str(weights),
+        "split": split,
+        "map50": float(metrics.box.map50),
+        "map50_95": float(metrics.box.map),
+        "precision": float(metrics.box.mp),
+        "recall": float(metrics.box.mr),
+        "model_size_mb": round(Path(weights).stat().st_size / 1e6, 2),
     }
+    if with_fps:
+        result.update(benchmark_yolo(weights, imgsz=imgsz, device=device))
+    return result
 
-    tag = args.tag or Path(args.weights).parent.name
-    args.out.mkdir(parents=True, exist_ok=True)
-    out_file = args.out / f"{tag}.json"
-    out_file.write_text(json.dumps(metrics, indent=2))
-    print(f"[eval_yolo] mAP50={metrics['map50']:.4f} mAP50-95={metrics['map50_95']:.4f} "
-          f"P={metrics['precision']:.4f} R={metrics['recall']:.4f} -> {out_file}")
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Evaluate YOLO (plan §8.5).")
+    ap.add_argument("--weights", type=Path, default=WEIGHTS_YOLO / "yolo_baseline" / "best.pt")
+    ap.add_argument("--data", type=Path, default=DATA_YAML)
+    ap.add_argument("--split", default="test")
+    ap.add_argument("--imgsz", type=int, default=640)
+    ap.add_argument("--device", default=None)
+    ap.add_argument("--out", type=Path, default=RESULTS_METRICS / "yolo_baseline.json")
+    args = ap.parse_args()
+
+    result = evaluate(args.weights, args.data, args.split, args.imgsz, args.device)
+    ensure_dir(args.out.parent)
+    args.out.write_text(json.dumps(result, indent=2))
+    print(json.dumps(result, indent=2))
+    print(f"\nwrote {args.out}")
 
 
 if __name__ == "__main__":

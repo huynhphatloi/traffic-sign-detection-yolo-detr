@@ -1,8 +1,8 @@
 # Native class system for the pkdarabi/cardetection ("Traffic Signs Detection") dataset.
 # These are the dataset's OWN 15 Roboflow-export classes, kept as-is (no remapping).
-# Order/ids match the Roboflow data.yaml (alphabetical). `prepare_dataset.py --write-configs`
-# regenerates this file from the raw data.yaml so it can never drift from the labels.
-# Used by both YOLO (names list) and DETR (id -> name).
+# Order/ids match the Roboflow data.yaml (alphabetical).
+# `inspect_dataset.py --write-configs` regenerates this file from the raw dataset data.yaml,
+# so it can never drift from the actual labels. Used by both YOLO (names) and DETR (id -> name).
 
 nc: 15
 names:
