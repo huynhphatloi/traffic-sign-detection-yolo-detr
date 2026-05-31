@@ -32,7 +32,8 @@ DATA_YAML = CONFIGS / "data.yaml"
 CLASSES_YAML = CONFIGS / "classes.yaml"
 
 # ── Data ─────────────────────────────────────────────────────────────────────
-DATA = REPO_ROOT / "data"
+# TSD_DATA_DIR lets Colab point data at Drive while the repo lives in /content.
+DATA = Path(os.environ["TSD_DATA_DIR"]) if os.environ.get("TSD_DATA_DIR") else REPO_ROOT / "data"
 DATA_RAW = DATA / "raw"
 DATA_PROCESSED = DATA / "processed" / "cardetection"
 DATA_COCO = DATA / "coco"
