@@ -3,7 +3,7 @@
 # `inspect_dataset.py --write-configs` syncs `names`/`nc` here from the dataset's own data.yaml.
 # Paths are relative to `path` and follow the Roboflow export layout (images/ + labels/ per split).
 
-path: data/processed/cardetection
+path: dataset/processed/cardetection
 train: train/images
 val: valid/images
 test: test/images

@@ -31,7 +31,7 @@ provide a `kaggle.json`); later sections inspect the data, run EDA, and train/ev
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# place the Roboflow export at data/processed/cardetection/{train,valid,test}/{images,labels}
+# place the Roboflow export at dataset/processed/cardetection/{train,valid,test}/{images,labels}
 python -m src.data.inspect_dataset --write-configs
 ```
 
@@ -65,7 +65,7 @@ as soon as those modules land.
 
 ## Data & weights policy
 
-`data/`, `weights/`, and heavy `results/` outputs are **gitignored** — only code, the notebook,
+`dataset/`, `weights/`, and heavy `results/` outputs are **gitignored** — only code, the notebook,
 configs, and small generated tables are tracked. Bring your own dataset via Kaggle (Section 0).
 
 ## Contributors

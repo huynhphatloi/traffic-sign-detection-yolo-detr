@@ -7,9 +7,9 @@ filesystem on import except resolving the repo root, so it is safe to import any
 
 Layout (relative to the repo root):
 
-    data/raw/                  raw Kaggle download (Roboflow export, gitignored)
-    data/processed/cardetection/{train,valid,test}/{images,labels}   normalized YOLO layout
-    data/coco/                 COCO JSON annotations for DETR
+    dataset/raw/               raw Kaggle download (Roboflow export, gitignored)
+    dataset/processed/cardetection/{train,valid,test}/{images,labels}   normalized YOLO layout
+    dataset/coco/              COCO JSON annotations for DETR
     weights/{yolo,detr}/       trained checkpoints (gitignored)
     results/{eda,samples,tables,metrics,plots}/   generated outputs
     configs/{data.yaml,classes.yaml}
@@ -33,7 +33,7 @@ CLASSES_YAML = CONFIGS / "classes.yaml"
 
 # ── Data ─────────────────────────────────────────────────────────────────────
 # TSD_DATA_DIR lets Colab point data at Drive while the repo lives in /content.
-DATA = Path(os.environ["TSD_DATA_DIR"]) if os.environ.get("TSD_DATA_DIR") else REPO_ROOT / "data"
+DATA = Path(os.environ["TSD_DATA_DIR"]) if os.environ.get("TSD_DATA_DIR") else REPO_ROOT / "dataset"
 DATA_RAW = DATA / "raw"
 DATA_PROCESSED = DATA / "processed" / "cardetection"
 DATA_COCO = DATA / "coco"

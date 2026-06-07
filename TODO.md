@@ -37,7 +37,7 @@ Keep the dataset as-is: `pkdarabi/cardetection`, **15 native classes**, no remap
       → `results/tables/data_quality_report.csv`; plus a difficult-sample gallery (small/blurry/low-light)
 
 **DETR baseline** (notebook §5, GPU)
-- [ ] `src/data/convert_to_coco.py` — YOLO TXT → COCO JSON → `data/coco/instances_{split}.json`
+- [ ] `src/data/convert_to_coco.py` — YOLO TXT → COCO JSON → `dataset/coco/instances_{split}.json`
 - [ ] `src/training/train_detr.py` — fine-tune `facebook/detr-resnet-50` → `weights/detr/detr_baseline/`
 - [ ] `src/evaluation/evaluate_detr.py` — mAP + FPS → `results/metrics/detr_baseline.json`
 
