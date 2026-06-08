@@ -24,16 +24,16 @@ Keep the dataset as-is: `pkdarabi/cardetection`, **15 native classes**, no remap
 ## Open tasks 🚧
 
 **EDA** (notebook §2)
-- [ ] `src/eda/class_distribution.py` — counts + bar chart + imbalance ratio
+- [x] `src/eda/class_distribution.py` — counts + bar chart + imbalance ratio
       → `results/eda/class_distribution.png`, `results/tables/class_distribution.csv`
-- [ ] `src/eda/bbox_statistics.py` — box area/wh/aspect + small/medium/large split; also a shared
+- [x] `src/eda/bbox_statistics.py` — box area/wh/aspect + small/medium/large split; also a shared
       `collect_boxes()` collector → `results/eda/bbox_*.png`, `results/tables/bbox_size_categories.csv`
-- [ ] `src/eda/image_statistics.py` — per-split counts, resolution, objects-per-image
+- [x] `src/eda/image_statistics.py` — per-split counts, resolution, objects-per-image
       → `results/eda/{images_per_split,image_resolution,objects_per_image}.png`, `results/tables/image_statistics.csv`
-- [ ] `src/eda/heatmap_analysis.py` — object-center heatmap → `results/eda/object_center_heatmap.png`
+- [x] `src/eda/heatmap_analysis.py` — object-center heatmap → `results/eda/object_center_heatmap.png`
 
 **Data quality** (notebook §3)
-- [ ] `src/data/validate_labels.py` — missing/empty/invalid/corrupt/duplicate checks
+- [x] `src/data/validate_labels.py` — missing/empty/invalid/corrupt/duplicate checks
       → `results/tables/data_quality_report.csv`; plus a difficult-sample gallery (small/blurry/low-light)
 
 **DETR baseline** (notebook §5, GPU)
