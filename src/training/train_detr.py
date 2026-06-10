@@ -13,14 +13,12 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
-from src.utils.paths import DATA_COCO, WEIGHTS_DETR, ensure_dir
+from src.utils.paths import DATA_COCO, DATA_PROCESSED, WEIGHTS_DETR, ensure_dir
 
 
 class CocoDetrDataset(torch.utils.data.Dataset):
     def __init__(self, coco_json: Path, processor: DetrImageProcessor):
-        from PIL import Image
         self.processor = processor
-        self.img_dir = coco_json.parent.parent / "processed" / "cardetection"
 
         with open(coco_json) as f:
             data = json.load(f)
@@ -28,14 +26,12 @@ class CocoDetrDataset(torch.utils.data.Dataset):
         self.images = {img["id"]: img for img in data["images"]}
         self.img_ids = [img["id"] for img in data["images"]]
 
-        # Group annotations by image_id
         self.anns: dict[int, list] = {img_id: [] for img_id in self.img_ids}
         for ann in data["annotations"]:
             self.anns[ann["image_id"]].append(ann)
 
-        # Detect split from filename (instances_train.json → train)
         split = coco_json.stem.replace("instances_", "")
-        self.img_dir = self.img_dir / split / "images"
+        self.img_dir = DATA_PROCESSED / split / "images"
 
     def __len__(self) -> int:
         return len(self.img_ids)
@@ -57,17 +53,19 @@ class CocoDetrDataset(torch.utils.data.Dataset):
             "boxes": torch.tensor(boxes, dtype=torch.float32) if boxes else torch.zeros((0, 4)),
             "class_labels": torch.tensor(labels, dtype=torch.long),
         }
-        encoding = self.processor(images=image, annotations=target,
-                                  return_tensors="pt")
-        encoding = {k: v.squeeze(0) for k, v in encoding.items()}
-        return encoding
+        encoding = self.processor(images=image, annotations=target, return_tensors="pt")
+        return {
+            "pixel_values": encoding["pixel_values"].squeeze(0),
+            "pixel_mask":   encoding["pixel_mask"].squeeze(0),
+            "labels":       encoding["labels"][0],  # list of 1 dict → unwrap
+        }
 
 
 def collate_fn(batch):
     pixel_values = torch.stack([b["pixel_values"] for b in batch])
-    labels = [{"class_labels": b["labels"]["class_labels"],
-               "boxes": b["labels"]["boxes"]} for b in batch]
-    return {"pixel_values": pixel_values, "labels": labels}
+    pixel_mask   = torch.stack([b["pixel_mask"]   for b in batch])
+    labels = [b["labels"] for b in batch]
+    return {"pixel_values": pixel_values, "pixel_mask": pixel_mask, "labels": labels}
 
 
 def train(
@@ -105,9 +103,10 @@ def train(
         total_loss = 0.0
         for batch_data in train_loader:
             pixel_values = batch_data["pixel_values"].to(device)
+            pixel_mask   = batch_data["pixel_mask"].to(device)
             labels = [{k: v.to(device) for k, v in lbl.items()}
                       for lbl in batch_data["labels"]]
-            outputs = model(pixel_values=pixel_values, labels=labels)
+            outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
             loss = outputs.loss
             optimizer.zero_grad()
             loss.backward()
@@ -123,9 +122,10 @@ def train(
         with torch.no_grad():
             for batch_data in val_loader:
                 pixel_values = batch_data["pixel_values"].to(device)
+                pixel_mask   = batch_data["pixel_mask"].to(device)
                 labels = [{k: v.to(device) for k, v in lbl.items()}
                           for lbl in batch_data["labels"]]
-                outputs = model(pixel_values=pixel_values, labels=labels)
+                outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
                 val_loss += outputs.loss.item()
 
         avg_val = val_loss / len(val_loader)
