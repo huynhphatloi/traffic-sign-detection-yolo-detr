@@ -44,14 +44,9 @@ class CocoDetrDataset(torch.utils.data.Dataset):
         image = Image.open(img_path).convert("RGB")
 
         anns = self.anns[img_id]
-        boxes = [[a["bbox"][0], a["bbox"][1],
-                  a["bbox"][0] + a["bbox"][2],
-                  a["bbox"][1] + a["bbox"][3]] for a in anns]
-        labels = [a["category_id"] for a in anns]
-
         target = {
-            "boxes": torch.tensor(boxes, dtype=torch.float32) if boxes else torch.zeros((0, 4)),
-            "class_labels": torch.tensor(labels, dtype=torch.long),
+            "image_id": img_id,
+            "annotations": self.anns[img_id]
         }
         encoding = self.processor(images=image, annotations=target, return_tensors="pt")
         return {
@@ -76,7 +71,7 @@ def train(
     coco_dir: Path = DATA_COCO,
     out_root: Path = WEIGHTS_DETR,
 ) -> Path:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"[train_detr] device={device}, epochs={epochs}, batch={batch}")
 
     processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
@@ -90,9 +85,9 @@ def train(
     val_ds   = CocoDetrDataset(coco_dir / "instances_valid.json", processor)
 
     train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True,
-                              collate_fn=collate_fn, num_workers=2)
+                              collate_fn=collate_fn, num_workers=0)
     val_loader   = DataLoader(val_ds,   batch_size=batch, shuffle=False,
-                              collate_fn=collate_fn, num_workers=2)
+                              collate_fn=collate_fn, num_workers=0)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
@@ -101,7 +96,7 @@ def train(
         # Train
         model.train()
         total_loss = 0.0
-        for batch_data in train_loader:
+        for step, batch_data in enumerate(train_loader):
             pixel_values = batch_data["pixel_values"].to(device)
             pixel_mask   = batch_data["pixel_mask"].to(device)
             labels = [{k: v.to(device) for k, v in lbl.items()}
@@ -113,6 +108,9 @@ def train(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             optimizer.step()
             total_loss += loss.item()
+            
+            if step % 50 == 0:
+                print(f"[train_detr] epoch {epoch}/{epochs} | batch {step}/{len(train_loader)} | loss: {loss.item():.4f}")
 
         avg_train = total_loss / len(train_loader)
 

@@ -24,7 +24,7 @@ def evaluate(
 ) -> dict:
     from PIL import Image
 
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or ("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     print(f"[evaluate_detr] loading model from {model_dir} on {device}")
 
     processor = DetrImageProcessor.from_pretrained(model_dir)
@@ -47,7 +47,9 @@ def evaluate(
     metric = MeanAveragePrecision(box_format="xyxy", iou_type="bbox")
 
     print(f"[evaluate_detr] running inference on {len(img_ids)} images...")
-    for img_id in img_ids:
+    for idx, img_id in enumerate(img_ids):
+        if idx % 100 == 0:
+            print(f"[evaluate_detr] evaluated {idx}/{len(img_ids)} images...")
         meta = images_meta[img_id]
         img_path = img_dir / meta["file_name"]
         image = Image.open(img_path).convert("RGB")
