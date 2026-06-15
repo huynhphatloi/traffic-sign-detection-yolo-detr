@@ -74,6 +74,9 @@ def train(
     device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"[train_detr] device={device}, epochs={epochs}, batch={batch}")
 
+    from src.utils.seeding import seed_everything
+    seed_everything()  # reproducible shuffling / initialisation
+
     processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
     model = DetrForObjectDetection.from_pretrained(
         "facebook/detr-resnet-50",
@@ -91,8 +94,15 @@ def train(
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
+    import time
+    n_train, n_val = len(train_loader), len(val_loader)
+    print(f"[train_detr] ▶ {n_train} train batches, {n_val} val batches/epoch — "
+          f"this is the long step; watch per-epoch val_loss below", flush=True)
+
     best_val_loss = float("inf")
+    best_epoch = 0
     for epoch in range(1, epochs + 1):
+        epoch_start = time.perf_counter()
         # Train
         model.train()
         total_loss = 0.0
@@ -108,9 +118,14 @@ def train(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             optimizer.step()
             total_loss += loss.item()
-            
+
             if step % 50 == 0:
-                print(f"[train_detr] epoch {epoch}/{epochs} | batch {step}/{len(train_loader)} | loss: {loss.item():.4f}")
+                elapsed = time.perf_counter() - epoch_start
+                rate = (step + 1) / elapsed if elapsed > 0 else 0
+                eta = (n_train - step - 1) / rate if rate > 0 else 0
+                print(f"[train_detr] epoch {epoch}/{epochs} | batch {step}/{n_train} "
+                      f"| loss {loss.item():.4f} | {rate:.1f} it/s | ~{eta/60:.1f} min left in epoch",
+                      flush=True)
 
         avg_train = total_loss / len(train_loader)
 
@@ -127,18 +142,27 @@ def train(
                 val_loss += outputs.loss.item()
 
         avg_val = val_loss / len(val_loader)
-        print(f"[train_detr] epoch {epoch}/{epochs}  "
-              f"train_loss={avg_train:.4f}  val_loss={avg_val:.4f}")
+        epoch_min = (time.perf_counter() - epoch_start) / 60
+        print(f"[train_detr] ✔ epoch {epoch}/{epochs}  "
+              f"train_loss={avg_train:.4f}  val_loss={avg_val:.4f}  ({epoch_min:.1f} min)",
+              flush=True)
 
+        # Save the BEST checkpoint (lowest val loss), not just the last epoch — so the
+        # reported best epoch and the weights on disk actually match.
         if avg_val < best_val_loss:
             best_val_loss = avg_val
             best_epoch = epoch
+            best_dir = ensure_dir(out_root / name)
+            model.save_pretrained(best_dir)
+            processor.save_pretrained(best_dir)
+            print(f"[train_detr]   ↳ new best (val_loss={avg_val:.4f}) → saved to {best_dir}")
 
-    # Save model
+    # Fall back to saving the final model if no epoch ever improved (e.g. epochs<1 guard).
     out_dir = ensure_dir(out_root / name)
-    model.save_pretrained(out_dir)
-    processor.save_pretrained(out_dir)
-    print(f"[train_detr] saved → {out_dir}  (best val_loss={best_val_loss:.4f} at epoch {best_epoch})")
+    if best_epoch == 0:
+        model.save_pretrained(out_dir)
+        processor.save_pretrained(out_dir)
+    print(f"[train_detr] done → {out_dir}  (best val_loss={best_val_loss:.4f} at epoch {best_epoch})")
     return out_dir
 
 

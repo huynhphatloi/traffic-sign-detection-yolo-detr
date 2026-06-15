@@ -38,6 +38,21 @@ python -m src.data.inspect_dataset --write-configs
 Every step is also a standalone module — `python -m src.<pkg>.<module>` — so you can run any
 part of the pipeline outside the notebook.
 
+## Tests
+
+A `pytest` suite covers the pure-Python logic (parsing, COCO conversion math, EDA collectors,
+data-quality checks, path helpers, RNG seeding) so it runs in seconds on CPU with no GPU or
+model downloads. It uses a tiny synthetic dataset built on the fly, plus smoke tests that run
+against the real raw dataset when it's present and skip cleanly when it isn't.
+
+```bash
+pip install -r requirements.txt
+pytest                 # ~40 tests, < 1s
+```
+
+Reproducibility: all RNGs (Python, NumPy, PyTorch, and the Ultralytics `seed`) are seeded via
+`src.utils.seeding.seed_everything` (default seed 42), and `requirements.txt` is version-pinned.
+
 ## What's inside
 
 ```
@@ -46,8 +61,9 @@ src/data/    inspect_dataset · validate_labels · visualize_annotations · conv
 src/eda/     class_distribution · bbox_statistics · image_statistics · heatmap_analysis
 src/training/   train_yolo · train_detr
 src/evaluation/ evaluate_yolo · evaluate_detr · benchmark_fps · compare_models
-src/utils/   paths (central path registry) · plotting
+src/utils/   paths (central path registry) · plotting · seeding (reproducible RNGs)
 configs/     data.yaml (Ultralytics) + classes.yaml (15 classes, auto-synced from the dataset)
+tests/       pytest suite (synthetic fixtures + real-dataset smoke tests)
 results/     eda/ samples/ tables/ metrics/ plots/   (generated; gitignored)
 ```
 

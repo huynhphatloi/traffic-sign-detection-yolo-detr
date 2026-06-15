@@ -1,13 +1,7 @@
-# Ultralytics data config for YOLO training/evaluation.
-# `path` is the processed dataset root (built by the Kaggle download in 00_colab_setup).
-# `inspect_dataset.py --write-configs` syncs `names`/`nc` here from the dataset's own data.yaml.
-# Paths are relative to `path` and follow the Roboflow export layout (images/ + labels/ per split).
-
 path: dataset/processed/cardetection
 train: train/images
 val: valid/images
 test: test/images
-
 nc: 15
 names:
   0: Green Light

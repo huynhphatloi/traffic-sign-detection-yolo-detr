@@ -26,7 +26,12 @@ def convert(root: Path = DATA_PROCESSED, out_dir: Path = DATA_COCO) -> None:
         annotations: list[dict] = []
         ann_id = 1
 
-        for img_id, img_path in enumerate(list_images(split, root), start=1):
+        all_imgs = list_images(split, root)
+        n_imgs = len(all_imgs)
+        print(f"[convert_to_coco] ▶ {split}: converting {n_imgs} images...", flush=True)
+        for img_id, img_path in enumerate(all_imgs, start=1):
+            if n_imgs and img_id % 500 == 0:
+                print(f"[convert_to_coco]   {split}: {img_id}/{n_imgs} images done", flush=True)
             with Image.open(img_path) as im:
                 w_img, h_img = im.size
 

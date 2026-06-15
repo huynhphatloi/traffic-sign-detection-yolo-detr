@@ -59,7 +59,9 @@ def evaluate(
         with torch.no_grad():
             outputs = model(**inputs)
 
-        # Post-process: convert logits → boxes (xyxy, absolute pixels)
+        # Post-process: convert logits → boxes (xyxy, absolute pixels).
+        # threshold=0.0 keeps all 100 DETR queries: mAP is a ranking metric and needs the
+        # full score-ordered prediction set, so we deliberately do NOT pre-filter here.
         target_sizes = torch.tensor([[h_img, w_img]], device=device)
         results = processor.post_process_object_detection(
             outputs, threshold=0.0, target_sizes=target_sizes

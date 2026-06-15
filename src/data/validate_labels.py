@@ -18,21 +18,16 @@ def validate(root=DATA_PROCESSED, num_classes=None) -> pd.DataFrame:
     
     for split in SPLITS:
         images = list_images(split, root)
-        
+        image_stems = {img_path.stem for img_path in images}  # O(1) membership, no O(n²) scan
+
         # Check missing images by looking at label files directly
         ldir = labels_dir(split, root)
         if ldir.exists():
-            for label_file in ldir.glob("*.txt"):
-                img_stem = label_file.stem
-                found = False
-                for img_path in images:
-                    if img_path.stem == img_stem:
-                        found = True
-                        break
-                if not found:
+            for label_file in sorted(ldir.glob("*.txt")):
+                if label_file.stem not in image_stems:
                     issues.append({
                         "split": split,
-                        "image": f"{img_stem}.???", # Don't know exact extension
+                        "image": f"{label_file.stem}.???",  # exact image extension unknown
                         "issue_type": "missing_image",
                         "detail": f"Label file {label_file.name} exists but no corresponding image"
                     })
@@ -83,12 +78,12 @@ def validate(root=DATA_PROCESSED, num_classes=None) -> pd.DataFrame:
                 continue
                 
             for i, (cls, xc, yc, w, h) in enumerate(boxes):
-                if cls >= num_classes:
+                if cls < 0 or cls >= num_classes:
                     issues.append({
                         "split": split,
                         "image": img_path.name,
                         "issue_type": "invalid_class_id",
-                        "detail": f"Box {i}: class {cls} >= num_classes ({num_classes})"
+                        "detail": f"Box {i}: class {cls} outside valid range [0, {num_classes})"
                     })
                 
                 if xc < 0 or xc > 1 or yc < 0 or yc > 1 or w < 0 or w > 1 or h < 0 or h > 1:

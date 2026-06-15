@@ -20,7 +20,7 @@ from src.utils.paths import DATA_YAML, WEIGHTS_YOLO, ensure_dir
 
 def train(
     model: str = "yolov8n.pt",
-    data: Path = DATA_YAML,
+    data: Path | None = None,
     epochs: int = 30,
     imgsz: int = 640,
     batch: int = 16,
@@ -30,6 +30,19 @@ def train(
     """Train YOLO and return (results, best_checkpoint_path)."""
     from ultralytics import YOLO  # imported lazily so the module loads without ultralytics
 
+    from src.utils.paths import resolved_data_yaml
+    from src.utils.seeding import DEFAULT_SEED, seed_everything
+    seed_everything(DEFAULT_SEED)
+
+    # Resolve to an absolute-path data config so Ultralytics finds the dataset on any host.
+    data = Path(data) if data is not None else resolved_data_yaml()
+
+    print(f"[train_yolo] ▶ starting: model={model} epochs={epochs} imgsz={imgsz} "
+          f"batch={batch} device={device or 'auto'}", flush=True)
+    print(f"[train_yolo]   data config: {data}", flush=True)
+    print("[train_yolo]   this is the long step — watch per-epoch mAP in the table below / "
+          "runs/detect/<name>/results.csv", flush=True)
+
     net = YOLO(model)  # pretrained weights
     results = net.train(
         data=str(data),
@@ -38,10 +51,12 @@ def train(
         batch=batch,
         name=name,
         device=device,
+        seed=DEFAULT_SEED,  # reproducible augmentation/initialisation
         fliplr=0.0,   # directional signs — never mirror horizontally
         flipud=0.0,
         verbose=True,
     )
+    print("[train_yolo] ✔ training finished — copying best checkpoint", flush=True)
 
     # Ultralytics writes to runs/detect/<name>/weights/best.pt; copy into our weights/ tree.
     run_dir = Path(results.save_dir) if hasattr(results, "save_dir") else net.trainer.save_dir
@@ -61,7 +76,8 @@ def train(
 def main() -> None:
     ap = argparse.ArgumentParser(description="Train YOLO baseline (plan §8.5).")
     ap.add_argument("--model", default="yolov8n.pt")
-    ap.add_argument("--data", type=Path, default=DATA_YAML)
+    ap.add_argument("--data", type=Path, default=None,
+                    help="data.yaml (default: auto-resolved absolute-path config)")
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16)

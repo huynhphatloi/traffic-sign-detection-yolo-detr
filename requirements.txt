@@ -1,27 +1,39 @@
-# Core
-numpy
-pandas
-pyyaml
-tqdm
-matplotlib
-seaborn
-opencv-python
-pillow
-scikit-learn
+# Pinned for reproducibility. Ranges lock the major.minor (compatible-release, "~=")
+# so a fresh install reproduces the study while still receiving patch fixes.
+#
+# Torch/torchvision use lower bounds only: on Colab the base image ships CUDA-matched
+# builds, and hard-pinning them there causes CUDA/driver conflicts. Pin them explicitly
+# only if you reproduce on a fixed local CUDA stack.
 
-# YOLO track
-ultralytics>=8.2.0
+# ── Core ──────────────────────────────────────────────────────────────────────
+numpy~=2.0
+pandas~=2.2
+pyyaml~=6.0
+tqdm~=4.66
+matplotlib~=3.9
+seaborn~=0.13
+opencv-python~=4.10
+pillow~=11.0
+scikit-learn~=1.6
 
-# DETR track
-torch
-torchvision
-transformers>=4.40.0
-pycocotools
-albumentations
+# ── YOLO track ────────────────────────────────────────────────────────────────
+ultralytics~=8.2
 
-# Evaluation / metrics
-torchmetrics
+# ── DETR track ────────────────────────────────────────────────────────────────
+# (CUDA build resolved by the platform on Colab; floors keep the API surface stable)
+torch>=2.2
+torchvision>=0.17
+transformers~=4.40
+timm~=1.0
+pycocotools~=2.0
+albumentations~=1.4
 
-# Phase 2 app (Gradio + Hugging Face)
-gradio
-huggingface_hub
+# ── Evaluation / metrics ──────────────────────────────────────────────────────
+torchmetrics~=1.3
+
+# ── Phase 2 app (Gradio + Hugging Face) ──────────────────────────────────────
+gradio~=4.40
+huggingface_hub~=0.24
+
+# ── Dev / testing ─────────────────────────────────────────────────────────────
+pytest~=8.0

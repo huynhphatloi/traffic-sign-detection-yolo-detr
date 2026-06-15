@@ -77,6 +77,21 @@ def load_classes(classes_yaml: Path = CLASSES_YAML) -> dict[int, str]:
     return {i: str(n) for i, n in enumerate(names)}
 
 
+def resolved_data_yaml(data_yaml: Path = DATA_YAML, root: Path = DATA_PROCESSED) -> Path:
+    """Return a data.yaml whose `path` is ABSOLUTE so Ultralytics always finds the dataset.
+
+    The tracked configs/data.yaml uses a relative `path` (nice for git), but Ultralytics
+    resolves a relative `path` against its own datasets_dir — which breaks on Colab/Drive
+    where the data lives outside the repo. This writes a sibling `data.local.yaml` with the
+    `path` pinned to the absolute, environment-aware dataset root and returns it.
+    """
+    cfg = yaml.safe_load(data_yaml.read_text())
+    cfg["path"] = str(root.resolve())
+    out = data_yaml.parent / "data.local.yaml"
+    out.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+    return out
+
+
 def split_dir(split: str, root: Path = DATA_PROCESSED) -> Path:
     """Return the directory for a split, accepting 'val' as an alias for 'valid'."""
     return root / ("valid" if split == "val" else split)

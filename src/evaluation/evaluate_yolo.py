@@ -17,12 +17,18 @@ from src.evaluation.benchmark_fps import benchmark_yolo
 from src.utils.paths import DATA_YAML, RESULTS_METRICS, WEIGHTS_YOLO, ensure_dir
 
 
-def evaluate(weights: Path, data: Path = DATA_YAML, split: str = "test",
+def evaluate(weights: Path, data: Path | None = None, split: str = "test",
              imgsz: int = 640, device: str | None = None, with_fps: bool = True) -> dict:
     from ultralytics import YOLO
 
+    from src.utils.paths import resolved_data_yaml
+    data = Path(data) if data is not None else resolved_data_yaml()
+
+    print(f"[evaluate_yolo] ▶ validating {weights} on split='{split}' (device={device or 'auto'})",
+          flush=True)
     model = YOLO(str(weights))
     metrics = model.val(data=str(data), split=split, imgsz=imgsz, device=device)
+    print("[evaluate_yolo]   accuracy done; benchmarking inference speed...", flush=True)
 
     result = {
         "model": "YOLO",
@@ -36,13 +42,15 @@ def evaluate(weights: Path, data: Path = DATA_YAML, split: str = "test",
     }
     if with_fps:
         result.update(benchmark_yolo(weights, imgsz=imgsz, device=device))
+    print("[evaluate_yolo] ✔ done", flush=True)
     return result
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Evaluate YOLO (plan §8.5).")
     ap.add_argument("--weights", type=Path, default=WEIGHTS_YOLO / "yolo_baseline" / "best.pt")
-    ap.add_argument("--data", type=Path, default=DATA_YAML)
+    ap.add_argument("--data", type=Path, default=None,
+                    help="data.yaml (default: auto-resolved absolute-path config)")
     ap.add_argument("--split", default="test")
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--device", default=None)

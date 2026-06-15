@@ -2,9 +2,16 @@
 /dataset/
 /weights/
 
+# Ultralytics / training run outputs — regenerated on every run, heavy, machine-specific.
+# /runs/
+
 # Generated results — keep the directory structure (.gitkeep) but not the heavy outputs.
 results/**/*
 !results/**/.gitkeep
+
+# Training logs — keep the clean per-epoch summaries, drop the noisy raw tee dumps.
+logs/*_raw.log
+logs/*.tmp
 
 # Model checkpoints anywhere
 *.pt
@@ -26,3 +33,4 @@ venv/
 # Personal / presentation material — kept local, not distributed
 /reports/
 /slides/
+configs/data.local.yaml
