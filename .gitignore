@@ -13,10 +13,15 @@ results/**/*
 logs/*_raw.log
 logs/*.tmp
 
-# Model checkpoints anywhere
+# Model checkpoints / weights anywhere — heavy, regenerated, and exceed GitHub's 100MB
+# file limit. Lightweight outputs (plots, metrics, csv, sample images) are kept so another
+# tool can read them to build reports/slides.
 *.pt
 *.pth
 *.onnx
+*.safetensors
+*.bin
+outputs/**/weights/
 
 # Python
 __pycache__/
