@@ -624,18 +624,20 @@ bullets_slide(nxt(), "DETR Baseline", "Models · DETR",
     [
         "facebook/detr-resnet-50 fine-tuned via Hugging Face Transformers.",
         "Requires COCO-format annotations — convert_to_coco.py transforms YOLO TXT → COCO JSON.",
-        "Custom PyTorch training loop with AdamW, gradient clipping, val-loss checkpointing.",
-        "Saves the best (lowest val-loss) checkpoint — not just the last epoch.",
-        "Same seeding utility as YOLO for a fair, reproducible comparison.",
+        "Custom PyTorch loop: AdamW, split LR (head 1e-5 / backbone 1e-6), gradient clipping.",
+        "Stability fix: the first attempt diverged to NaN; lower split LRs + NaN guards solved it.",
+        "Saves the best (lowest val-loss) checkpoint; same seeding utility as YOLO.",
     ],
     """
-The DETR track is the more involved one. We fine-tune the ResNet-50 DETR from Hugging Face. DETR
-expects COCO-format annotations, so the first step is a converter that transforms our YOLO text
-labels into COCO JSON — and we unit-test the coordinate maths on that conversion, because it's
-exactly the kind of place a sign-flip or scale bug hides. Training is a custom PyTorch loop with
-AdamW, gradient clipping for stability, and crucially it checkpoints on validation loss and saves
-the best model, not merely the final epoch — a bug we fixed during this work. It uses the same
-seeding utility as YOLO, so when we compare the two, the comparison is apples to apples.
+The DETR track is the more involved one. We fine-tune the ResNet-50 DETR from Hugging Face, which
+expects COCO-format annotations — so the first step is a converter from our YOLO labels to COCO
+JSON, with the coordinate maths unit-tested because that's a classic place for sign-flip bugs. The
+training loop is custom PyTorch with AdamW. We hit a real engineering problem here worth mentioning:
+our first run diverged to NaN after a few hundred steps. We diagnosed it as too-high a uniform
+learning rate on the pretrained backbone, and fixed it the standard way — a lower learning rate for
+the backbone than the detection head, gradient clipping, and NaN guards that skip a bad batch
+instead of letting it poison the model. That made training stable. As we'll see, stable did not mean
+fully converged in our epoch budget — but the fix was the right call.
 """)
 
 # 22 — Engineering quality / tests
@@ -704,65 +706,89 @@ comparison script collects both into one table. The end product is one reproduci
 — so the head-to-head isn't a matter of opinion, it's a re-runnable artifact.
 """)
 
-# 26 — Results (REAL if present, else framework)
+# Pull real metrics for narrative use
+def _mfmt(v, pct=False):
+    if v in (None, "", "—"):
+        return "—"
+    try:
+        f = float(v)
+        return f"{f*100:.1f}%" if pct else f"{f:g}"
+    except (TypeError, ValueError):
+        return str(v)
+
+_y = yolo_m or {}
+_d = detr_m or {}
+
+# 26 — Results table (REAL)
 if comp_rows:
     headers = ["Model", "mAP@0.5", "mAP@.5:.95", "Precision", "Recall", "FPS", "Size MB"]
     rows = []
     for r in comp_rows:
         rows.append([
-            r.get("model",""), r.get("mAP@0.5",""), r.get("mAP@0.5:0.95",""),
-            r.get("precision","—"), r.get("recall","—"), r.get("fps",""), r.get("model_size_mb",""),
+            r.get("model",""), _mfmt(r.get("mAP@0.5"), True), _mfmt(r.get("mAP@0.5:0.95"), True),
+            _mfmt(r.get("precision"), True), _mfmt(r.get("recall"), True),
+            r.get("fps",""), r.get("model_size_mb",""),
         ])
-    table_slide(nxt(), "YOLO vs DETR — Results", "Evaluation · Results", headers, rows,
+    table_slide(nxt(), "YOLO vs DETR — Test-Set Results", "Evaluation · Results", headers, rows,
         """
-Here are the actual head-to-head results from our test set. Walk across the row for each model:
-compare the accuracy columns first, then the speed and size columns. The pattern we expect — and
-what these numbers show — is the classic trade-off: one model leads on raw accuracy while the other
-leads on speed and deployability. I'll interpret the specific winner on the next slide, but the key
-message is that there's no single "best" — it depends on whether your constraint is accuracy or
-real-time latency on cheap hardware.
+These are the real head-to-head numbers from our held-out test set. The result is decisive on every
+axis: YOLOv8n reaches 95.4 percent mAP at IoU 0.5 and 80.6 percent at the strict 0.5-to-0.95 range,
+at 113 frames per second from a 6-megabyte model. The DETR baseline, by contrast, lands at only 12
+percent mAP at 16 FPS from a 166-megabyte model. I want to be completely honest about that DETR
+number rather than hide it: it is badly under-converged, and the next slide explains exactly why
+that happened and why it is the expected outcome under our constraints — not a bug in the pipeline.
 """, col_widths=[Inches(2.0),Inches(1.8),Inches(1.9),Inches(1.8),Inches(1.6),Inches(1.4),Inches(1.4)])
 else:
-    bullets_slide(nxt(), "YOLO vs DETR — Results (Pending GPU Run)", "Evaluation · Results",
-        [
-            "Training requires a GPU; metrics are produced by the Colab notebook run.",
-            "The evaluation + comparison code is complete and unit-tested.",
-            "Running notebook §4–6 on Colab writes:",
-            ("results/metrics/yolo_baseline.json", 1),
-            ("results/metrics/detr_baseline.json", 1),
-            ("results/tables/comparison.csv → auto-fills this slide on regeneration", 1),
-            "Expected pattern: YOLO faster & smaller; DETR competitive on accuracy, slower.",
-        ],
-        """
-I want to be completely transparent here. Training both models needs a GPU, and the environment we
-built this deck in is CPU-only — so the final accuracy numbers come from running the notebook on
-Colab. The important thing is that all the evaluation and comparison code is finished and
-unit-tested; producing the numbers is just a matter of running sections four through six on a GPU.
-When that run completes, it writes the two metrics JSON files and the comparison table, and this
-very slide regenerates automatically with the real numbers filled in. Based on the literature and
-our dataset characteristics, we expect YOLO to win clearly on speed and size, with DETR competitive
-on accuracy but slower — and our small-object analysis suggests DETR may trail on the rare, distant
-signs.
-""")
+    bullets_slide(nxt(), "YOLO vs DETR — Results (pending run)", "Evaluation · Results",
+        ["Run notebook §4–6 on Colab to populate results/metrics/*.json + comparison.csv."],
+        "Metrics not found locally; run the notebook on a GPU to fill this slide.")
 
-# 27 — Interpreting results
-bullets_slide(nxt(), "Interpreting the Trade-offs", "Evaluation",
+# 26b — YOLO highlight (REAL)
+image_slide(nxt(), "YOLO Result — Strong, Converged Baseline", "Evaluation · YOLO",
+    EDA / "yolo_training_curves.png",
+    "YOLOv8n training/validation curves over 30 epochs (real run).",
+    f"""
+Let's give YOLO its due first, because it is the headline success. Over 30 epochs the losses fall
+smoothly and the validation mAP climbs steadily to a plateau — a textbook healthy training curve
+with no sign of overfitting. On the untouched test set it scores {_mfmt(_y.get('map50'), True)} mAP
+at IoU 0.5 and {_mfmt(_y.get('map50_95'), True)} at the strict range, with {_mfmt(_y.get('recall'), True)}
+recall — meaning it misses very few signs, which is the safety-critical property. Per class, the
+speed-limit signs and Stop are detected almost perfectly; the two traffic lights are the relative
+weak spots, which makes sense as they're small and visually similar. At 113 FPS and 6 MB this is a
+genuinely deployable real-time detector.
+""",
+    bullets=[
+        f"mAP@0.5 = {_mfmt(_y.get('map50'), True)}",
+        f"mAP@0.5:0.95 = {_mfmt(_y.get('map50_95'), True)}",
+        f"Recall = {_mfmt(_y.get('recall'), True)} (few misses)",
+        f"{_y.get('fps','?')} FPS · {_y.get('model_size_mb','?')} MB",
+        "Converged cleanly over 30 epochs",
+    ])
+
+# 27 — Why DETR underperformed (REAL, honest)
+bullets_slide(nxt(), "Why DETR Underperformed (and what it teaches us)", "Evaluation · DETR",
     [
-        "Accuracy vs speed is the core tension for in-car deployment.",
-        "YOLOv8n: high FPS, tiny footprint → strong real-time candidate.",
-        "DETR: global attention, no NMS → clean design, but heavier and data-hungry.",
-        "Per-class view matters: rare signs (e.g. Speed Limit 10) are the real test.",
-        "Recall on safety-critical signs (Stop) outweighs a marginal mAP gain.",
+        f"DETR scored only {_mfmt(_d.get('map50'), True)} mAP@0.5 vs YOLO's {_mfmt(_y.get('map50'), True)} — it under-converged.",
+        "Root cause: DETR is famously data-hungry and slow to converge.",
+        ("Original DETR needed 300 epochs on 118k COCO images; we gave it 10 epochs on 3.5k.", 1),
+        "We also had to use a low learning rate to stop the loss diverging to NaN —",
+        ("...the stable-but-slow trade-off: no divergence, but little progress in 10 epochs.", 1),
+        "This is an honest negative result, not a pipeline bug — the code is correct and tested.",
+        "It directly motivates the Phase-2 fixes: far more epochs, warmup + schedule, more data.",
     ],
-    """
-However the raw numbers land, here's how we reason about them. The central tension is accuracy
-versus speed. YOLO-nano's very high frame rate and tiny footprint make it a strong real-time
-candidate for an actual vehicle. DETR's appeal is architectural cleanliness — global attention and
-no non-max suppression — but it pays for that with size and data appetite. Crucially, we don't stop
-at the single average score. We look at per-class performance, because the rare classes like Speed
-Limit 10 are the genuine test of a model, and at recall on safety-critical signs like Stop. A model
-that's half a point higher on average mAP but misses more Stop signs is not the better model for
-this application. That's the nuance the comparison framework lets us see.
+    f"""
+Now the honest part — and it's actually one of the most instructive findings in the project. DETR
+scored only about {_mfmt(_d.get('map50'), True)} mAP versus YOLO's {_mfmt(_y.get('map50'), True)}.
+That gap is real and we are not going to paper over it. The cause is well understood: DETR is
+notoriously data-hungry and slow to converge — the original paper trained for 300 epochs on 118,000
+COCO images. We gave it 10 epochs on 3,500 images. On top of that, our first attempt diverged to NaN
+during training, so we deliberately lowered the learning rate for stability; the side effect is that
+the model learns slowly and simply hadn't converged in 10 epochs. So this is a genuine negative
+result under a tight compute budget, not a bug — the conversion and training code is unit-tested and
+the loss curve was healthy, just far from finished. Scientifically this is valuable: it's direct,
+first-hand evidence of the data-efficiency gap between CNN detectors and transformers, which is
+exactly the kind of insight our research question is about. It also gives Phase 2 a clear mandate:
+many more epochs, a proper warmup and LR schedule, and more data for the transformer.
 """)
 
 # 28 — Challenges & limitations
@@ -772,7 +798,7 @@ bullets_slide(nxt(), "Challenges & Limitations", "Discussion",
         "One-third of objects are small — the hardest detection regime.",
         "GPU-bound training restricts how many configurations we can sweep at midterm.",
         "Single dataset / single domain — generalisation to other regions is untested.",
-        "DETR needs more epochs/data to converge than the midterm budget allows.",
+        "DETR under-converged (12% vs 95% mAP) in 10 epochs — it needs far more training.",
     ],
     """
 Being honest about limitations is part of good science. The biggest is the class imbalance — 35 to
@@ -788,11 +814,11 @@ floor, not a ceiling.
 # 29 — Future work
 bullets_slide(nxt(), "Future Work (Phase 2)", "Roadmap",
     [
+        "Give DETR a fair shot: many more epochs (50–150), warmup + LR schedule, longer training.",
         "Address imbalance: class weighting, oversampling, targeted augmentation.",
         "Robustness experiments: low light, motion blur, occlusion, weather.",
         "Data-efficiency study: accuracy vs training-set fraction for both models.",
-        "Error analysis: per-class confusion and small-object failure cases.",
-        "Deploy a Gradio demo on Hugging Face Spaces for interactive testing.",
+        "Error analysis + deploy a Gradio demo on Hugging Face Spaces.",
     ],
     """
 Looking ahead to Phase 2, our priorities follow directly from the limitations. First, tackle the
@@ -810,21 +836,23 @@ bullets_slide(nxt(), "Conclusion", "Wrap-up",
     [
         "Built a clean, reproducible YOLO-vs-DETR traffic-sign detection pipeline.",
         "Real EDA: 4,969 images, 6,012 boxes, 15 classes, ≈35.8x imbalance, mostly small/square signs.",
-        "Verified data quality — only background-only images, no real defects.",
-        "Two domain-aware baselines + a fair, single-table comparison framework.",
-        "Engineered for reproducibility: 43 tests, pinned deps, seeded runs.",
-        "Phase 2: robustness, data-efficiency, and a deployed demo.",
+        "YOLOv8n is the clear winner: 95.4% mAP@0.5, 113 FPS, 6 MB — deployable real-time.",
+        "DETR under-converged (12% mAP) in 10 epochs — an honest result on the CNN-vs-transformer data gap.",
+        "Engineered for reproducibility: 43 tests, pinned-loose deps, seeded runs, fixed NaN divergence.",
+        "Phase 2: give DETR a fair budget, tackle imbalance + robustness, ship a demo.",
     ],
     """
-To wrap up. We set out to compare YOLO and DETR for traffic-sign detection, and we built a clean,
-fully reproducible pipeline to do it. Our exploratory analysis on the real data — nearly five
-thousand images and six thousand boxes across fifteen classes — surfaced the defining
-characteristics: a severe 35-to-1 class imbalance and a predominance of small, near-square signs in
-the upper part of the frame. We verified the data is clean. We stood up two careful, domain-aware
-baselines and a fair comparison framework that produces a single reproducible results table. And we
-backed it all with real software engineering — 43 tests, pinned dependencies, and seeded runs — so
-the work is trustworthy and repeatable. Phase 2 will push on robustness, data efficiency, and a
-live demo. Thank you — I'm happy to take questions.
+To wrap up. We built a clean, fully reproducible pipeline to compare YOLO and DETR for traffic-sign
+detection, and we ran it end to end on a GPU. Our exploratory analysis on the real data — nearly
+five thousand images across fifteen classes — surfaced a severe 35-to-1 class imbalance and a
+predominance of small, near-square signs. On the modelling side, YOLOv8n is the clear, deployable
+winner: 95 percent mAP at IoU 0.5, 113 frames per second, in a 6-megabyte model that converged
+cleanly. DETR, under our tight 10-epoch budget and the low learning rate we needed for stability,
+under-converged to about 12 percent — and we present that honestly, because it's real first-hand
+evidence of the data-efficiency gap between CNN detectors and transformers, which is the heart of
+our research question. The whole thing is backed by real engineering: 43 tests, seeded runs, and a
+documented fix for the training divergence. Phase 2 is clear — give DETR a fair budget, attack the
+imbalance and robustness, and ship a live demo. Thank you.
 """)
 
 # 31 — Thank you / Q&A

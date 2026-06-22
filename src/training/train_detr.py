@@ -66,7 +66,8 @@ def collate_fn(batch):
 def train(
     epochs: int = 10,
     batch: int = 2,
-    lr: float = 1e-4,
+    lr: float = 1e-5,
+    lr_backbone: float = 1e-6,
     name: str = "detr_baseline",
     coco_dir: Path = DATA_COCO,
     out_root: Path = WEIGHTS_DETR,
@@ -92,12 +93,27 @@ def train(
     val_loader   = DataLoader(val_ds,   batch_size=batch, shuffle=False,
                               collate_fn=collate_fn, num_workers=0)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    # Lower LR on the pretrained ResNet-50 backbone than on the transformer head.
+    # Fine-tuning the whole DETR at a single 1e-4 LR makes the loss diverge to NaN
+    # (the official HF DETR recipe uses lr=1e-4 head / 1e-5 backbone; we go an order
+    # lower for extra stability on this small, imbalanced dataset).
+    backbone_params, head_params = [], []
+    for pname, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        (backbone_params if "backbone" in pname else head_params).append(p)
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": head_params, "lr": lr},
+            {"params": backbone_params, "lr": lr_backbone},
+        ],
+        weight_decay=1e-4,
+    )
 
     import time
     n_train, n_val = len(train_loader), len(val_loader)
     print(f"[train_detr] ▶ {n_train} train batches, {n_val} val batches/epoch — "
-          f"this is the long step; watch per-epoch val_loss below", flush=True)
+          f"lr(head)={lr} lr(backbone)={lr_backbone}; watch per-epoch val_loss below", flush=True)
 
     best_val_loss = float("inf")
     best_epoch = 0
@@ -113,9 +129,19 @@ def train(
                       for lbl in batch_data["labels"]]
             outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
             loss = outputs.loss
+
+            # Guard against divergence: if a step produces NaN/Inf, skip it instead of
+            # letting it poison every subsequent weight (which is what produced the
+            # `nan` boxes seen earlier). Persistent NaNs mean the LR is still too high.
+            if not torch.isfinite(loss):
+                print(f"[train_detr]   ⚠ non-finite loss at epoch {epoch} step {step}; "
+                      f"skipping batch", flush=True)
+                optimizer.zero_grad()
+                continue
+
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
             optimizer.step()
             total_loss += loss.item()
 
@@ -132,6 +158,7 @@ def train(
         # Validate
         model.eval()
         val_loss = 0.0
+        n_val_ok = 0
         with torch.no_grad():
             for batch_data in val_loader:
                 pixel_values = batch_data["pixel_values"].to(device)
@@ -139,9 +166,11 @@ def train(
                 labels = [{k: v.to(device) for k, v in lbl.items()}
                           for lbl in batch_data["labels"]]
                 outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
-                val_loss += outputs.loss.item()
+                if torch.isfinite(outputs.loss):
+                    val_loss += outputs.loss.item()
+                    n_val_ok += 1
 
-        avg_val = val_loss / len(val_loader)
+        avg_val = (val_loss / n_val_ok) if n_val_ok else float("inf")
         epoch_min = (time.perf_counter() - epoch_start) / 60
         print(f"[train_detr] ✔ epoch {epoch}/{epochs}  "
               f"train_loss={avg_train:.4f}  val_loss={avg_val:.4f}  ({epoch_min:.1f} min)",
