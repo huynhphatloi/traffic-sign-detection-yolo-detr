@@ -32,3 +32,12 @@ python-pptx>=0.6
 
 # ── Dev / testing ─────────────────────────────────────────────────────────────
 pytest>=7.0
+# Phase 2 app (Gradio + Hugging Face)
+gradio
+huggingface_hub
+streamlit
+streamlit-webrtc
+av
+
+# Report generation
+python-docx
