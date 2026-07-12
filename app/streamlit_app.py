@@ -27,11 +27,47 @@ except ImportError:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_WEIGHTS = REPO_ROOT / "weights" / "yolo" / "yolo_baseline" / "best.pt"
-YOLO_METRICS = REPO_ROOT / "results" / "metrics" / "yolo_baseline.json"
 OUTPUT_DIR = REPO_ROOT / "app" / "outputs"
 
 DETECTION_COLUMNS = ["class", "confidence", "x1", "y1", "x2", "y2"]
+
+
+def latest_output_dir() -> Path | None:
+    output_root = REPO_ROOT / "outputs"
+    if not output_root.exists():
+        return None
+
+    candidates = [
+        path
+        for path in output_root.iterdir()
+        if path.is_dir() and (path / "weights" / "yolo" / "yolo_baseline" / "best.pt").exists()
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+
+
+def resolve_default_weights() -> Path:
+    override = os.environ.get("TSD_YOLO_WEIGHTS")
+    if override:
+        return Path(override).expanduser().resolve()
+
+    latest = latest_output_dir()
+    if latest is not None:
+        return latest / "weights" / "yolo" / "yolo_baseline" / "best.pt"
+
+    return REPO_ROOT / "weights" / "yolo" / "yolo_baseline" / "best.pt"
+
+
+def resolve_default_metrics() -> Path:
+    latest = latest_output_dir()
+    if latest is not None:
+        return latest / "results" / "metrics" / "yolo_baseline.json"
+    return REPO_ROOT / "results" / "metrics" / "yolo_baseline.json"
+
+
+DEFAULT_WEIGHTS = resolve_default_weights()
+YOLO_METRICS = resolve_default_metrics()
 
 
 @st.cache_resource(show_spinner="Loading YOLO model...")
