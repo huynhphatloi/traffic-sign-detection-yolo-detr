@@ -1,8 +1,10 @@
-"""Streamlit demo for traffic-sign detection on webcam, video, and images."""
+"""Streamlit report dashboard and demo for traffic-sign detection."""
 from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -28,8 +30,10 @@ except ImportError:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = REPO_ROOT / "app" / "outputs"
-
 DETECTION_COLUMNS = ["class", "confidence", "x1", "y1", "x2", "y2"]
+VIDEO_STABILIZER_IOU = 0.25
+VIDEO_STABILIZER_SMOOTHING = 0.65
+VIDEO_STABILIZER_MAX_AGE = 4
 
 
 def latest_output_dir() -> Path | None:
@@ -47,14 +51,32 @@ def latest_output_dir() -> Path | None:
     return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
 
 
+def latest_trained_weights() -> Path | None:
+    output_root = REPO_ROOT / "outputs"
+    if not output_root.exists():
+        return None
+
+    patterns = [
+        "*/weights/best.pt",
+        "*/weights/yolo/yolov8n_cbam_attention/best.pt",
+        "*/weights/yolo/yolo_baseline/best.pt",
+    ]
+    candidates: list[Path] = []
+    for pattern in patterns:
+        candidates.extend(path for path in output_root.glob(pattern) if path.is_file())
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
+
+
 def resolve_default_weights() -> Path:
     override = os.environ.get("TSD_YOLO_WEIGHTS")
     if override:
         return Path(override).expanduser().resolve()
 
-    latest = latest_output_dir()
-    if latest is not None:
-        return latest / "weights" / "yolo" / "yolo_baseline" / "best.pt"
+    latest_weights = latest_trained_weights()
+    if latest_weights is not None:
+        return latest_weights
 
     return REPO_ROOT / "weights" / "yolo" / "yolo_baseline" / "best.pt"
 
@@ -66,29 +88,374 @@ def resolve_default_metrics() -> Path:
     return REPO_ROOT / "results" / "metrics" / "yolo_baseline.json"
 
 
+def report_asset(*parts: str) -> Path:
+    latest = latest_output_dir()
+    if latest is not None:
+        candidate = latest.joinpath(*parts)
+        if candidate.exists():
+            return candidate
+    return REPO_ROOT.joinpath(*parts)
+
+
 DEFAULT_WEIGHTS = resolve_default_weights()
 YOLO_METRICS = resolve_default_metrics()
+
+
+def display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
 
 
 @st.cache_resource(show_spinner="Loading YOLO model...")
 def load_yolo(weights_path: str):
     os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "tsd-matplotlib"))
 
+    try:
+        from src.models.yolo_attention import register_yolo_attention_modules
+
+        register_yolo_attention_modules()
+    except Exception:
+        pass
+
     from ultralytics import YOLO
 
     return YOLO(weights_path)
 
 
-def load_metrics(path: Path) -> dict:
-    if not path.exists():
+@st.cache_data(show_spinner=False)
+def load_metrics(path: str) -> dict:
+    p = Path(path)
+    if not p.exists():
         return {}
-    return json.loads(path.read_text())
+    return json.loads(p.read_text())
+
+
+@st.cache_data(show_spinner=False)
+def load_checkpoint_summary(path: str) -> dict:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        import torch
+
+        ckpt = torch.load(p, map_location="cpu", weights_only=False)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    args = ckpt.get("train_args", {}) if isinstance(ckpt, dict) else {}
+    metrics = ckpt.get("train_metrics", {}) if isinstance(ckpt, dict) else {}
+    return {
+        "model": args.get("model"),
+        "epochs": args.get("epochs"),
+        "imgsz": args.get("imgsz"),
+        "device": args.get("device") or "auto",
+        "seed": args.get("seed"),
+        "date": ckpt.get("date") if isinstance(ckpt, dict) else None,
+        "map50_val": metrics.get("metrics/mAP50(B)"),
+        "map50_95_val": metrics.get("metrics/mAP50-95(B)"),
+        "precision_val": metrics.get("metrics/precision(B)"),
+        "recall_val": metrics.get("metrics/recall(B)"),
+    }
 
 
 def check_model_ready() -> None:
     if not DEFAULT_WEIGHTS.exists():
         st.error(f"Missing YOLO weights: {DEFAULT_WEIGHTS}")
         st.stop()
+
+
+def dataset_split_table() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"Tập": "Huấn luyện", "Số ảnh": 3530, "Tỉ lệ": "71.0%", "Số vật thể": 4298, "Vai trò": "Cập nhật trọng số"},
+            {"Tập": "Kiểm định", "Số ảnh": 801, "Tỉ lệ": "16.1%", "Số vật thể": 944, "Vai trò": "Chọn checkpoint"},
+            {"Tập": "Kiểm tra", "Số ảnh": 638, "Tỉ lệ": "12.8%", "Số vật thể": 770, "Vai trò": "Báo cáo kết quả"},
+        ]
+    )
+
+
+def experiment_table() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Mã": "E0",
+                "Cấu hình": "YOLOv8n",
+                "Cách làm / thay đổi": "Mô hình nền, train 30 epoch",
+                "mAP@0.5": 0.9633,
+                "mAP@.5:.95": 0.8068,
+                "FPS": 65.3,
+                "Kết luận": "Mốc tốt nhất về độ chính xác",
+            },
+            {
+                "Mã": "E0",
+                "Cấu hình": "DETR-ResNet50",
+                "Cách làm / thay đổi": "Transformer baseline, 10 epoch",
+                "mAP@0.5": 0.1220,
+                "mAP@.5:.95": 0.0988,
+                "FPS": 15.7,
+                "Kết luận": "Chưa hội tụ, không dùng demo",
+            },
+            {
+                "Mã": "E1",
+                "Cấu hình": "YOLO11n",
+                "Cách làm / thay đổi": "YOLO thế hệ mới, nhẹ hơn YOLOv8n",
+                "mAP@0.5": 0.9252,
+                "mAP@.5:.95": 0.7833,
+                "FPS": 59.0,
+                "Kết luận": "Tốt nhất trong 3 mô hình bổ sung, nhưng kém YOLOv8n",
+            },
+            {
+                "Mã": "E1",
+                "Cấu hình": "SSDLite-MNv3",
+                "Cách làm / thay đổi": "Mobile CNN, 320px, GFLOPs rất thấp",
+                "mAP@0.5": 0.7432,
+                "mAP@.5:.95": 0.6260,
+                "FPS": 57.9,
+                "Kết luận": "Định vị kém, gần như mù với vật thể nhỏ",
+            },
+            {
+                "Mã": "E1",
+                "Cấu hình": "D-FINE-Nano",
+                "Cách làm / thay đổi": "Transformer thế hệ mới, nhẹ hơn DETR",
+                "mAP@0.5": 0.7836,
+                "mAP@.5:.95": 0.6589,
+                "FPS": 25.8,
+                "Kết luận": "Cứu được DETR, nhưng phân loại còn yếu",
+            },
+            {
+                "Mã": "E2",
+                "Cấu hình": "PyTorch FP16",
+                "Cách làm / thay đổi": "Giữ YOLOv8n, đổi số học sang FP16",
+                "mAP@0.5": 0.9633,
+                "mAP@.5:.95": 0.8068,
+                "FPS": 65.3,
+                "Kết luận": "Không mất độ chính xác, giảm khoảng 49% dung lượng",
+            },
+            {
+                "Mã": "E2",
+                "Cấu hình": "ONNX INT8",
+                "Cách làm / thay đổi": "Post-training quantization bằng ONNX",
+                "mAP@0.5": 0.9552,
+                "mAP@.5:.95": 0.7973,
+                "FPS": 5.7,
+                "Kết luận": "Nén tốt nhất, nhưng runtime CPU chậm trong thử nghiệm",
+            },
+            {
+                "Mã": "E2",
+                "Cấu hình": "OpenVINO INT8",
+                "Cách làm / thay đổi": "INT8 qua OpenVINO trên CPU",
+                "mAP@0.5": 0.9265,
+                "mAP@.5:.95": 0.7846,
+                "FPS": 13.9,
+                "Kết luận": "Nhanh hơn ONNX INT8, nhưng mất AP nhỏ nhiều",
+            },
+            {
+                "Mã": "E3",
+                "Cấu hình": "YOLO26n đối chứng",
+                "Cách làm / thay đổi": "Student YOLO26n train thường 50 epoch",
+                "mAP@0.5": 0.9348,
+                "mAP@.5:.95": 0.7773,
+                "FPS": 69.7,
+                "Kết luận": "Đối chứng mạnh, nhưng vẫn dưới YOLOv8n",
+            },
+            {
+                "Mã": "E3",
+                "Cấu hình": "YOLO26n chưng cất",
+                "Cách làm / thay đổi": "Student học từ YOLO26s, dis=6.0",
+                "mAP@0.5": 0.9014,
+                "mAP@.5:.95": 0.7450,
+                "FPS": 74.8,
+                "Kết luận": "Kết quả âm: chưng cất kém đối chứng",
+            },
+        ]
+    )
+
+
+def notebook_source_table() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Notebook": "traffic_sign_3models_COLAB.ipynb",
+                "Phần trong báo cáo": "E1 - Ba kiến trúc nhẹ",
+                "Kết quả khớp": "YOLO11n 0.9252, SSDLite 0.7432, D-FINE 0.7836",
+                "Nhận xét": "Khớp với report; chứng minh YOLOv8n vẫn là mốc tốt nhất.",
+            },
+            {
+                "Notebook": "1_traffic_sign_quantization_COLAB.ipynb",
+                "Phần trong báo cáo": "E2 - Lượng tử hoá",
+                "Kết quả khớp": "FP16/ONNX FP32 0.9633, ONNX INT8 0.9552, OpenVINO INT8 0.9265",
+                "Nhận xét": "Khớp với report; INT8 nén mạnh nhưng phụ thuộc runtime.",
+            },
+            {
+                "Notebook": "2_BO_SUNG_OPENVINO_COLAB.ipynb",
+                "Phần trong báo cáo": "E2 - Bổ sung OpenVINO",
+                "Kết quả khớp": "OpenVINO INT8 0.9265, nhanh hơn ONNX INT8 trên CPU",
+                "Nhận xét": "Khớp với report; cần đọc AP vật thể nhỏ khi chọn OpenVINO.",
+            },
+            {
+                "Notebook": "giaidoan2.ipynb",
+                "Phần trong báo cáo": "E3 - Chưng cất tri thức",
+                "Kết quả khớp": "Thầy 0.9520, trò đối chứng 0.9348, trò chưng cất 0.9014",
+                "Nhận xét": "Khớp với report; chưng cất là kết quả âm trong điều kiện dis=6.0.",
+            },
+        ]
+    )
+
+
+def selected_model_table(metrics: dict, ckpt: dict) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"Thuộc tính": "Model dùng demo", "Giá trị": "YOLOv8n PyTorch best.pt"},
+            {"Thuộc tính": "Checkpoint", "Giá trị": display_path(DEFAULT_WEIGHTS)},
+            {"Thuộc tính": "Nguồn", "Giá trị": "outputs mới nhất / YOLO baseline 30 epoch"},
+            {"Thuộc tính": "Epoch train", "Giá trị": ckpt.get("epochs", 30)},
+            {"Thuộc tính": "mAP@0.5 test", "Giá trị": f"{metrics.get('map50', 0.953857):.4f}"},
+            {"Thuộc tính": "mAP@0.5:0.95 test", "Giá trị": f"{metrics.get('map50_95', 0.805803):.4f}"},
+            {"Thuộc tính": "Precision / Recall", "Giá trị": f"{metrics.get('precision', 0.9084):.4f} / {metrics.get('recall', 0.9564):.4f}"},
+            {"Thuộc tính": "FPS đo trong output", "Giá trị": f"{metrics.get('fps', 113.2):.1f}"},
+            {"Thuộc tính": "Dung lượng", "Giá trị": f"{metrics.get('model_size_mb', 6.25):.2f} MB"},
+        ]
+    )
+
+
+def render_metric_cards(metrics: dict) -> None:
+    cols = st.columns(4)
+    cols[0].metric("mAP@0.5", f"{metrics.get('map50', 0):.4f}")
+    cols[1].metric("mAP@0.5:0.95", f"{metrics.get('map50_95', 0):.4f}")
+    cols[2].metric("FPS", f"{metrics.get('fps', 0):.1f}")
+    cols[3].metric("Model size", f"{metrics.get('model_size_mb', 0):.2f} MB")
+
+
+def render_plot_grid(paths: list[Path], captions: list[str]) -> None:
+    existing = [(p, c) for p, c in zip(paths, captions) if p.exists()]
+    if not existing:
+        st.info("Chưa tìm thấy biểu đồ đã xuất trong results/outputs.")
+        return
+
+    for i in range(0, len(existing), 2):
+        cols = st.columns(2)
+        for col, (path, caption) in zip(cols, existing[i : i + 2]):
+            col.image(str(path), caption=caption, width="stretch")
+
+
+def sidebar_controls(metrics: dict) -> tuple[float, float, int, int, int]:
+    with st.sidebar:
+        st.subheader("Model demo")
+        st.code(display_path(DEFAULT_WEIGHTS))
+        conf = st.slider("Confidence", 0.05, 0.95, 0.35, 0.05)
+        iou = st.slider("IoU", 0.10, 0.90, 0.70, 0.05)
+        imgsz = st.select_slider("Image size", options=[320, 416, 512, 640, 768, 960], value=640)
+        duration = st.slider("Session duration", 10, 15, 10, 1)
+        inference_fps = st.slider("Inference FPS cap", 1, 15, 8, 1)
+
+        if metrics:
+            st.subheader("Kết quả model")
+            st.metric("mAP50", f"{metrics.get('map50', 0):.3f}")
+            st.metric("mAP50-95", f"{metrics.get('map50_95', 0):.3f}")
+            st.metric("FPS", f"{metrics.get('fps', 0):.1f}")
+
+    return conf, iou, imgsz, duration, inference_fps
+
+
+def render_overview_tab() -> None:
+    st.subheader("Bài toán")
+    st.write(
+        "Đề tài giải quyết bài toán phát hiện biển báo giao thông từ ảnh/video. "
+        "Đầu ra gồm hộp bao, nhãn lớp và độ tin cậy. Nhóm không chỉ đo một con số mAP, "
+        "mà tách rõ hai khâu: định vị biển báo và phân loại đúng loại biển."
+    )
+
+    st.subheader("Cách tiếp cận")
+    roadmap = pd.DataFrame(
+        [
+            {"Giai đoạn": "E0 - Mô hình nền", "Câu hỏi": "Mốc so sánh là bao nhiêu?", "Cách làm": "Train YOLOv8n và DETR-R50"},
+            {"Giai đoạn": "E1 - Kiến trúc nhẹ", "Câu hỏi": "Có model nhẹ hơn mà không kém hơn không?", "Cách làm": "Thử YOLO11n, SSDLite, D-FINE"},
+            {"Giai đoạn": "E2 - Lượng tử hoá", "Câu hỏi": "Có thể nén model tốt nhất mà không train lại không?", "Cách làm": "FP16, ONNX INT8, OpenVINO INT8"},
+            {"Giai đoạn": "E3 - Chưng cất", "Câu hỏi": "Student nhỏ có học được từ teacher lớn không?", "Cách làm": "YOLO26s dạy YOLO26n"},
+        ]
+    )
+    st.dataframe(roadmap, hide_index=True, width="stretch")
+
+
+def render_data_analysis_tab() -> None:
+    st.subheader("Bộ dữ liệu")
+    cols = st.columns(4)
+    cols[0].metric("Ảnh", "4,969")
+    cols[1].metric("Vật thể", "6,012")
+    cols[2].metric("Lớp", "15")
+    cols[3].metric("Test sạch", "573 ảnh")
+
+    st.dataframe(dataset_split_table(), hide_index=True, width="stretch")
+
+    st.subheader("Nhận xét từ phân tích dữ liệu")
+    st.markdown(
+        """
+- Mất cân bằng lớp rất rõ: lớp phổ biến nhất có 787 mẫu, lớp hiếm nhất Speed Limit 10 chỉ có 22 mẫu.
+- 35.3% vật thể thuộc nhóm nhỏ theo chuẩn COCO, nên biển ở xa là điểm khó chính.
+- Ảnh nguồn đồng nhất 416x416; tăng input size quá cao chủ yếu là phóng to, không tạo thêm chi tiết.
+- Có rò rỉ dữ liệu giữa các tập: 65/638 ảnh test có bản sao trong train, nên report đo thêm cột "sạch".
+- Các speed sign dễ nhầm vì khác nhau chủ yếu ở chữ số nhỏ bên trong biển.
+"""
+    )
+
+    render_plot_grid(
+        [
+            report_asset("results", "eda", "class_distribution.png"),
+            report_asset("results", "eda", "bbox_size_categories.png"),
+            report_asset("results", "eda", "object_center_heatmap.png"),
+            report_asset("results", "eda", "image_resolution.png"),
+        ],
+        [
+            "Phân bố lớp",
+            "Kích thước bounding box",
+            "Heatmap vị trí vật thể",
+            "Độ phân giải ảnh",
+        ],
+    )
+
+
+def render_experiments_tab() -> None:
+    st.subheader("Các hướng đã thử và kết quả")
+    df = experiment_table()
+    st.dataframe(df, hide_index=True, width="stretch")
+
+    st.subheader("Đọc kết quả theo từng thí nghiệm")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            """
+**E0 - Baseline**
+
+YOLOv8n đạt mAP cao và tốc độ tốt. DETR-R50 thấp vì chưa hội tụ trong 10 epoch, không phải vì transformer chắc chắn kém.
+
+**E1 - Kiến trúc nhẹ**
+
+YOLO11n nhẹ hơn nhưng kém YOLOv8n. SSDLite định vị kém với vật thể nhỏ. D-FINE định vị tốt hơn SSDLite nhưng phân loại yếu hơn.
+"""
+        )
+    with c2:
+        st.markdown(
+            """
+**E2 - Lượng tử hoá**
+
+FP16 gần như không mất độ chính xác. ONNX INT8 nén rất tốt nhưng chậm trong runtime thử nghiệm. OpenVINO INT8 nhanh hơn ONNX INT8 nhưng giảm AP vật thể nhỏ.
+
+**E3 - Chưng cất tri thức**
+
+YOLO26n chưng cất kém hơn YOLO26n đối chứng. Kết quả âm này được giữ lại vì nó chỉ ra điều kiện áp dụng chưa phù hợp.
+"""
+        )
+
+    st.subheader("Notebook và mức khớp với report")
+    st.dataframe(notebook_source_table(), hide_index=True, width="stretch")
+
+
+def render_selected_model_tab(metrics: dict, ckpt: dict) -> None:
+    st.subheader("Model được chọn cho demo")
+    render_metric_cards(metrics)
+    st.dataframe(selected_model_table(metrics, ckpt), hide_index=True, width="stretch")
 
 
 def result_rows(result: Any) -> list[dict]:
@@ -113,6 +480,149 @@ def result_rows(result: Any) -> list[dict]:
     return rows
 
 
+def bbox_iou(a: dict, b: dict) -> float:
+    ax1, ay1, ax2, ay2 = a["x1"], a["y1"], a["x2"], a["y2"]
+    bx1, by1, bx2, by2 = b["x1"], b["y1"], b["x2"], b["y2"]
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def class_color(name: str) -> tuple[int, int, int]:
+    palette = [
+        (46, 204, 113),
+        (52, 152, 219),
+        (241, 196, 15),
+        (231, 76, 60),
+        (155, 89, 182),
+        (26, 188, 156),
+        (230, 126, 34),
+        (149, 165, 166),
+    ]
+    return palette[abs(hash(name)) % len(palette)]
+
+
+def draw_detections(frame_bgr, rows: list[dict]):
+    annotated = frame_bgr.copy()
+    height, width = annotated.shape[:2]
+
+    for row in rows:
+        x1 = int(max(0, min(width - 1, row["x1"])))
+        y1 = int(max(0, min(height - 1, row["y1"])))
+        x2 = int(max(0, min(width - 1, row["x2"])))
+        y2 = int(max(0, min(height - 1, row["y2"])))
+        color = class_color(row["class"])
+        label = f"{row['class']} {row['confidence']:.2f}"
+
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 2)
+        label_y = max(y1, text_h + baseline + 4)
+        cv2.rectangle(
+            annotated,
+            (x1, label_y - text_h - baseline - 4),
+            (min(width - 1, x1 + text_w + 8), label_y),
+            color,
+            -1,
+        )
+        cv2.putText(
+            annotated,
+            label,
+            (x1 + 4, label_y - baseline - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.52,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+    return annotated
+
+
+class DetectionStabilizer:
+    """Simple IoU tracker that smooths boxes and survives short missed detections."""
+
+    def __init__(
+        self,
+        iou_threshold: float = VIDEO_STABILIZER_IOU,
+        smoothing: float = VIDEO_STABILIZER_SMOOTHING,
+        max_age: int = VIDEO_STABILIZER_MAX_AGE,
+    ) -> None:
+        self.iou_threshold = iou_threshold
+        self.smoothing = smoothing
+        self.max_age = max_age
+        self.tracks: list[dict] = []
+        self.next_id = 1
+
+    def reset(self) -> None:
+        self.tracks = []
+        self.next_id = 1
+
+    def update(self, detections: list[dict]) -> list[dict]:
+        matched_tracks: set[int] = set()
+        matched_detections: set[int] = set()
+        existing_track_count = len(self.tracks)
+
+        candidates: list[tuple[float, int, int]] = []
+        for ti, track in enumerate(self.tracks):
+            for di, det in enumerate(detections):
+                if track["class"] != det["class"]:
+                    continue
+                iou = bbox_iou(track, det)
+                if iou >= self.iou_threshold:
+                    candidates.append((iou, ti, di))
+
+        for _, ti, di in sorted(candidates, reverse=True):
+            if ti in matched_tracks or di in matched_detections:
+                continue
+            track = self.tracks[ti]
+            det = detections[di]
+            keep = self.smoothing
+            take = 1.0 - keep
+            for key in ("x1", "y1", "x2", "y2"):
+                track[key] = round(keep * float(track[key]) + take * float(det[key]), 1)
+            track["confidence"] = round(0.55 * float(track["confidence"]) + 0.45 * float(det["confidence"]), 3)
+            track["missed"] = 0
+            track["hits"] += 1
+            matched_tracks.add(ti)
+            matched_detections.add(di)
+
+        for ti in range(existing_track_count):
+            if ti not in matched_tracks:
+                self.tracks[ti]["missed"] += 1
+
+        for di, det in enumerate(detections):
+            if di in matched_detections:
+                continue
+            self.tracks.append(
+                {
+                    **det,
+                    "track_id": self.next_id,
+                    "hits": 1,
+                    "missed": 0,
+                }
+            )
+            self.next_id += 1
+
+        self.tracks = [track for track in self.tracks if track["missed"] <= self.max_age]
+        return self.current()
+
+    def current(self) -> list[dict]:
+        rows = []
+        for track in self.tracks:
+            if track["hits"] < 1:
+                continue
+            row = {key: track[key] for key in DETECTION_COLUMNS}
+            if track["missed"]:
+                row["confidence"] = round(max(0.05, row["confidence"] * (0.85 ** track["missed"])), 3)
+            rows.append(row)
+        return rows
+
+
 def detection_table(result: Any) -> pd.DataFrame:
     return pd.DataFrame(result_rows(result), columns=DETECTION_COLUMNS)
 
@@ -120,6 +630,43 @@ def detection_table(result: Any) -> pd.DataFrame:
 def predict_frame(frame_bgr, conf: float, iou: float, imgsz: int):
     model = load_yolo(str(DEFAULT_WEIGHTS))
     return model.predict(frame_bgr, conf=conf, iou=iou, imgsz=imgsz, verbose=False)[0]
+
+
+def browser_safe_frame(frame_bgr):
+    height, width = frame_bgr.shape[:2]
+    even_height = height - (height % 2)
+    even_width = width - (width % 2)
+    return frame_bgr[:even_height, :even_width]
+
+
+def transcode_for_browser(source_path: Path) -> Path:
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError(
+            "Không tìm thấy ffmpeg để chuyển video sang H.264. "
+            "Khi deploy Streamlit Cloud, thêm `ffmpeg` vào packages.txt rồi redeploy."
+        )
+
+    output_path = source_path.with_name(f"{source_path.stem}_browser.mp4")
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(source_path),
+        "-vcodec",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0 or not output_path.exists():
+        details = (result.stderr or result.stdout or "không có log").strip()
+        raise RuntimeError(f"Không chuyển video sang H.264 được: {details[-800:]}")
+    return output_path
 
 
 def summarize_rows(rows: list[dict]) -> pd.DataFrame:
@@ -143,19 +690,19 @@ def summarize_rows(rows: list[dict]) -> pd.DataFrame:
 
 class TrafficSignVideoProcessor(VideoProcessorBase):
     def __init__(self) -> None:
-        self.conf = 0.25
+        self.conf = 0.35
         self.iou = 0.70
         self.imgsz = 640
         self.duration = 10
         self.max_inference_fps = 8
         self.started_at = time.monotonic()
         self.last_inference_at = 0.0
-        self.last_annotated = None
         self.lock = threading.Lock()
         self.frame_count = 0
         self.processed_frames = 0
         self.detected_rows: list[dict] = []
         self.class_counter: Counter[str] = Counter()
+        self.stabilizer = DetectionStabilizer()
 
     def configure(self, conf: float, iou: float, imgsz: int, duration: int, max_inference_fps: int) -> None:
         with self.lock:
@@ -169,11 +716,11 @@ class TrafficSignVideoProcessor(VideoProcessorBase):
         with self.lock:
             self.started_at = time.monotonic()
             self.last_inference_at = 0.0
-            self.last_annotated = None
             self.frame_count = 0
             self.processed_frames = 0
             self.detected_rows = []
             self.class_counter = Counter()
+            self.stabilizer.reset()
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -202,20 +749,22 @@ class TrafficSignVideoProcessor(VideoProcessorBase):
             conf = self.conf
             iou = self.iou
             imgsz = self.imgsz
+            stable_rows = self.stabilizer.current()
 
-        annotated = self.last_annotated if self.last_annotated is not None else frame_bgr
+        annotated = draw_detections(frame_bgr, stable_rows) if stable_rows else frame_bgr.copy()
 
         if should_detect:
             result = predict_frame(frame_bgr, conf=conf, iou=iou, imgsz=imgsz)
-            annotated = result.plot()
             rows = result_rows(result)
 
             with self.lock:
+                stable_rows = self.stabilizer.update(rows)
                 self.last_inference_at = now
-                self.last_annotated = annotated
                 self.processed_frames += 1
                 self.detected_rows.extend(rows)
                 self.class_counter.update(row["class"] for row in rows)
+
+            annotated = draw_detections(frame_bgr, stable_rows)
 
         with self.lock:
             remaining = max(0.0, self.duration - (time.monotonic() - self.started_at))
@@ -227,28 +776,9 @@ class TrafficSignVideoProcessor(VideoProcessorBase):
         return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
 
-def sidebar_controls(metrics: dict) -> tuple[float, float, int, int, int]:
-    with st.sidebar:
-        st.subheader("Model")
-        st.code(str(DEFAULT_WEIGHTS.relative_to(REPO_ROOT)))
-        conf = st.slider("Confidence", 0.05, 0.95, 0.25, 0.05)
-        iou = st.slider("IoU", 0.10, 0.90, 0.70, 0.05)
-        imgsz = st.select_slider("Image size", options=[320, 416, 512, 640, 768, 960], value=640)
-        duration = st.slider("Session duration", 10, 15, 10, 1)
-        inference_fps = st.slider("Inference FPS cap", 1, 15, 8, 1)
-
-        if metrics:
-            st.subheader("Test metrics")
-            st.metric("mAP50", f"{metrics.get('map50', 0):.3f}")
-            st.metric("mAP50-95", f"{metrics.get('map50_95', 0):.3f}")
-            st.metric("FPS", f"{metrics.get('fps', 0):.1f}")
-
-    return conf, iou, imgsz, duration, inference_fps
-
-
-def render_webcam_tab(conf: float, iou: float, imgsz: int, duration: int, inference_fps: int) -> None:
+def render_webcam_demo(conf: float, iou: float, imgsz: int, duration: int, inference_fps: int) -> None:
     if webrtc_streamer is None:
-        st.error("Missing webcam dependencies. Install with: pip install streamlit-webrtc av")
+        st.error("Thiếu webcam dependencies. Cài bằng: pip install streamlit-webrtc av")
         return
 
     rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
@@ -293,11 +823,10 @@ def render_webcam_tab(conf: float, iou: float, imgsz: int, duration: int, infere
             if stats["complete"]:
                 break
 
-        if ctx.video_processor:
-            rows = ctx.video_processor.snapshot()["rows"]
-            summary = summarize_rows(rows)
-            if not summary.empty:
-                st.dataframe(summary, hide_index=True, width="stretch")
+        rows = ctx.video_processor.snapshot()["rows"]
+        summary = summarize_rows(rows)
+        if not summary.empty:
+            st.dataframe(summary, hide_index=True, width="stretch")
 
 
 def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_seconds: int) -> tuple[Path, pd.DataFrame, dict]:
@@ -310,29 +839,39 @@ def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_s
 
     cap = cv2.VideoCapture(str(input_path))
     if not cap.isOpened():
-        raise RuntimeError("Cannot read the uploaded video. Try MP4/H.264.")
+        raise RuntimeError("Không đọc được video. Hãy thử MP4/H.264.")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 25
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width -= width % 2
+    height -= height % 2
     max_frames = int(max_seconds * fps)
 
     output_path = OUTPUT_DIR / f"annotated_{int(time.time())}.mp4"
     writer = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    if not writer.isOpened():
+        cap.release()
+        input_path.unlink(missing_ok=True)
+        raise RuntimeError("Không tạo được video output. Hãy thử video MP4/H.264 khác.")
 
     all_rows: list[dict] = []
     processed = 0
     progress = st.progress(0)
+    stabilizer = DetectionStabilizer()
 
     while processed < max_frames:
         ok, frame_bgr = cap.read()
         if not ok:
             break
 
+        frame_bgr = browser_safe_frame(frame_bgr)
         result = predict_frame(frame_bgr, conf=conf, iou=iou, imgsz=imgsz)
-        annotated = result.plot()
+        rows = result_rows(result)
+        stable_rows = stabilizer.update(rows)
+        annotated = draw_detections(frame_bgr, stable_rows)
         writer.write(annotated)
-        all_rows.extend(result_rows(result))
+        all_rows.extend(rows)
         processed += 1
         progress.progress(min(processed / max(max_frames, 1), 1.0))
 
@@ -340,25 +879,31 @@ def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_s
     writer.release()
     input_path.unlink(missing_ok=True)
     progress.empty()
+    playable_path = transcode_for_browser(output_path)
 
     stats = {
         "processed_frames": processed,
         "source_fps": round(fps, 2),
         "duration_seconds": round(processed / max(fps, 1), 2),
         "detections": len(all_rows),
+        "video_format": "H.264 / yuv420p",
     }
-    return output_path, summarize_rows(all_rows), stats
+    return playable_path, summarize_rows(all_rows), stats
 
 
-def render_video_tab(conf: float, iou: float, imgsz: int, duration: int) -> None:
-    uploaded_video = st.file_uploader("Upload video", type=["mp4", "mov", "avi", "mkv"])
+def render_video_demo(conf: float, iou: float, imgsz: int, duration: int) -> None:
+    uploaded_video = st.file_uploader("Upload video", type=["mp4", "mov", "avi", "mkv"], key="video-upload")
     if uploaded_video is None:
-        st.info("Upload a short traffic-scene video to detect signs frame by frame.")
+        st.info("Upload video ngắn để detect từng frame bằng model đã chọn.")
         return
 
     if st.button("Process video"):
         with st.spinner("Running YOLO on video frames..."):
-            output_path, summary, stats = process_video_file(uploaded_video, conf, iou, imgsz, duration)
+            try:
+                output_path, summary, stats = process_video_file(uploaded_video, conf, iou, imgsz, duration)
+            except Exception as exc:
+                st.error(str(exc))
+                return
 
         cols = st.columns(4)
         cols[0].metric("Frames", stats["processed_frames"])
@@ -367,26 +912,27 @@ def render_video_tab(conf: float, iou: float, imgsz: int, duration: int) -> None
         cols[3].metric("Detections", stats["detections"])
 
         if summary.empty:
-            st.warning("No traffic signs detected in this video segment.")
+            st.warning("Không phát hiện biển báo ở ngưỡng confidence hiện tại.")
         else:
             st.dataframe(summary, hide_index=True, width="stretch")
 
-        st.video(str(output_path))
+        video_bytes = output_path.read_bytes()
+        st.video(video_bytes, format="video/mp4")
         st.download_button(
             "Download annotated video",
-            output_path.read_bytes(),
+            video_bytes,
             file_name=output_path.name,
             mime="video/mp4",
         )
 
 
-def render_image_tab(conf: float, iou: float, imgsz: int) -> None:
+def render_image_demo(conf: float, iou: float, imgsz: int) -> None:
     camera_image = st.camera_input("Camera snapshot")
-    uploaded_image = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"])
+    uploaded_image = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"], key="image-upload")
     image_source = camera_image or uploaded_image
 
     if image_source is None:
-        st.info("Capture a camera image or upload a traffic-scene image to run single-frame detection.")
+        st.info("Chụp ảnh hoặc upload ảnh để chạy single-frame detection.")
         return
 
     image = Image.open(image_source).convert("RGB")
@@ -401,26 +947,45 @@ def render_image_tab(conf: float, iou: float, imgsz: int) -> None:
     with right:
         st.metric("Detected signs", len(table))
         if table.empty:
-            st.warning("No signs detected at the current confidence threshold.")
+            st.warning("Không có biển báo nào vượt ngưỡng confidence.")
         else:
             st.dataframe(table, hide_index=True, width="stretch")
 
 
+def render_demo_tab(conf: float, iou: float, imgsz: int, duration: int, inference_fps: int) -> None:
+    st.subheader("Demo nhận diện bằng mô hình tốt nhất")
+    st.caption(f"Đang dùng: {display_path(DEFAULT_WEIGHTS)}")
+    webcam_tab, video_tab, image_tab = st.tabs(["Webcam realtime", "Video upload", "Image snapshot"])
+    with webcam_tab:
+        render_webcam_demo(conf, iou, imgsz, duration, inference_fps)
+    with video_tab:
+        render_video_demo(conf, iou, imgsz, duration)
+    with image_tab:
+        render_image_demo(conf, iou, imgsz)
+
+
 def main() -> None:
-    st.set_page_config(page_title="Traffic Sign Detector", layout="wide")
-    st.title("Traffic Sign Detector")
+    st.set_page_config(page_title="Traffic Sign Detection Report", layout="wide")
+    st.title("Traffic Sign Detection")
 
     check_model_ready()
-    metrics = load_metrics(YOLO_METRICS)
+    metrics = load_metrics(str(YOLO_METRICS))
+    ckpt = load_checkpoint_summary(str(DEFAULT_WEIGHTS))
     conf, iou, imgsz, duration, inference_fps = sidebar_controls(metrics)
 
-    webcam_tab, video_tab, image_tab = st.tabs(["Webcam realtime", "Video file", "Image snapshot"])
-    with webcam_tab:
-        render_webcam_tab(conf, iou, imgsz, duration, inference_fps)
-    with video_tab:
-        render_video_tab(conf, iou, imgsz, duration)
-    with image_tab:
-        render_image_tab(conf, iou, imgsz)
+    overview, data, experiments, selected, demo = st.tabs(
+        ["Tổng Quan", "Phân Tích Dữ Liệu", "Thực Nghiệm Mô Hình", "Mô Hình Được Chọn", "Demo Nhận Diện"]
+    )
+    with overview:
+        render_overview_tab()
+    with data:
+        render_data_analysis_tab()
+    with experiments:
+        render_experiments_tab()
+    with selected:
+        render_selected_model_tab(metrics, ckpt)
+    with demo:
+        render_demo_tab(conf, iou, imgsz, duration, inference_fps)
 
 
 if __name__ == "__main__":
