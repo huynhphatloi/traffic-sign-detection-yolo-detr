@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import numpy as np
 import pandas as pd
 import streamlit as st
 from PIL import Image
@@ -34,6 +35,22 @@ DETECTION_COLUMNS = ["class", "confidence", "x1", "y1", "x2", "y2"]
 VIDEO_STABILIZER_IOU = 0.25
 VIDEO_STABILIZER_SMOOTHING = 0.65
 VIDEO_STABILIZER_MAX_AGE = 4
+VIDEO_STABILIZER_MIN_HITS = 2
+
+# ── Small-object defaults ────────────────────────────────────────────────────
+# The training data is dominated by close-up signs (~41% of it is GTSRB-style crops
+# where the sign fills ~67% of the frame), so the model is weak on the regime that
+# actually matters in dashcam footage: a 30-50px sign in a 1920x1080 frame. At
+# imgsz=640 such a frame is letterboxed by 0.33x and a 40px sign becomes 13px —
+# barely above the stride-8 P3 head. These defaults push inference toward that
+# regime instead; see DEFAULT_* below and the "Video thực tế" sidebar section.
+DEFAULT_CONF = 0.20
+DEFAULT_IOU = 0.70
+DEFAULT_IMGSZ = 1280
+DEFAULT_DROP_BOTTOM_PCT = 30
+DEFAULT_TILE_SIZE = 640
+DEFAULT_TILE_OVERLAP = 0.20
+TILE_BATCH = 8
 
 
 def latest_output_dir() -> Path | None:
@@ -340,15 +357,32 @@ def render_plot_grid(paths: list[Path], captions: list[str]) -> None:
             col.image(str(path), caption=caption, width="stretch")
 
 
-def sidebar_controls(metrics: dict) -> tuple[float, float, int, int, int]:
+def sidebar_controls(metrics: dict) -> dict:
     with st.sidebar:
         st.subheader("Model demo")
         st.code(display_path(DEFAULT_WEIGHTS))
-        conf = st.slider("Confidence", 0.05, 0.95, 0.35, 0.05)
-        iou = st.slider("IoU", 0.10, 0.90, 0.70, 0.05)
-        imgsz = st.select_slider("Image size", options=[320, 416, 512, 640, 768, 960], value=640)
+        conf = st.slider("Confidence", 0.05, 0.95, DEFAULT_CONF, 0.05)
+        iou = st.slider("IoU", 0.10, 0.90, DEFAULT_IOU, 0.05)
+        imgsz = st.select_slider(
+            "Image size",
+            options=[320, 416, 512, 640, 768, 960, 1280, 1536],
+            value=DEFAULT_IMGSZ,
+        )
         duration = st.slider("Session duration", 10, 15, 10, 1)
         inference_fps = st.slider("Inference FPS cap", 1, 15, 8, 1)
+
+        with st.expander("Video thực tế (dashcam)", expanded=True):
+            st.caption(
+                "Dữ liệu train nghiêng nặng về biển cận cảnh, nên biển nhỏ ở xa là điểm yếu. "
+                "Các tuỳ chọn dưới đây bù lại điều đó khi chạy video đường thật."
+            )
+            drop_bottom_pct = st.slider("Bỏ phần dưới khung hình (%)", 0, 50, DEFAULT_DROP_BOTTOM_PCT, 5)
+            min_hits = st.slider("Số frame xác nhận", 1, 5, VIDEO_STABILIZER_MIN_HITS, 1)
+            use_tiling = st.checkbox("Tiled inference (biển rất nhỏ)", value=False)
+            tile = st.select_slider("Tile size", options=[512, 640, 768], value=DEFAULT_TILE_SIZE)
+            overlap = st.slider("Tile overlap", 0.0, 0.4, DEFAULT_TILE_OVERLAP, 0.05)
+            if use_tiling:
+                st.warning("Tiling chạy chậm hơn nhiều lần — chỉ nên dùng cho clip ngắn.")
 
         if metrics:
             st.subheader("Kết quả model")
@@ -356,7 +390,18 @@ def sidebar_controls(metrics: dict) -> tuple[float, float, int, int, int]:
             st.metric("mAP50-95", f"{metrics.get('map50_95', 0):.3f}")
             st.metric("FPS", f"{metrics.get('fps', 0):.1f}")
 
-    return conf, iou, imgsz, duration, inference_fps
+    return {
+        "conf": conf,
+        "iou": iou,
+        "imgsz": imgsz,
+        "duration": duration,
+        "inference_fps": inference_fps,
+        "drop_bottom_pct": drop_bottom_pct,
+        "min_hits": min_hits,
+        "use_tiling": use_tiling,
+        "tile": tile,
+        "overlap": overlap,
+    }
 
 
 def render_overview_tab() -> None:
@@ -551,10 +596,15 @@ class DetectionStabilizer:
         iou_threshold: float = VIDEO_STABILIZER_IOU,
         smoothing: float = VIDEO_STABILIZER_SMOOTHING,
         max_age: int = VIDEO_STABILIZER_MAX_AGE,
+        min_hits: int = VIDEO_STABILIZER_MIN_HITS,
     ) -> None:
         self.iou_threshold = iou_threshold
         self.smoothing = smoothing
         self.max_age = max_age
+        # A detection must be confirmed on `min_hits` frames before it is drawn. This is
+        # what makes a low confidence threshold usable: real signs persist across frames,
+        # one-frame noise does not.
+        self.min_hits = max(1, min_hits)
         self.tracks: list[dict] = []
         self.next_id = 1
 
@@ -614,7 +664,7 @@ class DetectionStabilizer:
     def current(self) -> list[dict]:
         rows = []
         for track in self.tracks:
-            if track["hits"] < 1:
+            if track["hits"] < self.min_hits:
                 continue
             row = {key: track[key] for key in DETECTION_COLUMNS}
             if track["missed"]:
@@ -623,13 +673,117 @@ class DetectionStabilizer:
         return rows
 
 
-def detection_table(result: Any) -> pd.DataFrame:
-    return pd.DataFrame(result_rows(result), columns=DETECTION_COLUMNS)
+def nms_rows(rows: list[dict], iou_threshold: float) -> list[dict]:
+    """Greedy per-class NMS over detection rows.
+
+    Needed because tiled inference runs the model several times on overlapping crops,
+    so the same sign can be reported by 2-4 tiles plus the full-frame pass.
+    """
+    kept: list[dict] = []
+    for cls in {row["class"] for row in rows}:
+        group = sorted(
+            (row for row in rows if row["class"] == cls),
+            key=lambda row: -row["confidence"],
+        )
+        selected: list[dict] = []
+        for candidate in group:
+            if all(bbox_iou(candidate, chosen) < iou_threshold for chosen in selected):
+                selected.append(candidate)
+        kept.extend(selected)
+    return sorted(kept, key=lambda row: -row["confidence"])
 
 
-def predict_frame(frame_bgr, conf: float, iou: float, imgsz: int):
+def tile_origins(total: int, tile: int, step: int) -> list[int]:
+    """Start offsets so that tiles of `tile` px cover `total` px with `step` stride.
+
+    The last origin is snapped to `total - tile` so the right/bottom edge is always
+    fully covered instead of being cropped off.
+    """
+    if total <= tile:
+        return [0]
+    origins = list(range(0, total - tile + 1, step))
+    if origins[-1] != total - tile:
+        origins.append(total - tile)
+    return origins
+
+
+def apply_roi(frame_bgr, drop_bottom_pct: int):
+    """Keep only the top (100 - drop_bottom_pct)% of the frame.
+
+    In dashcam footage the bottom of the frame is road surface and bonnet — no signs
+    live there, so cropping it both speeds up inference and removes false positives.
+    The crop keeps the top-left origin, so detection coordinates need no offset.
+    """
+    if drop_bottom_pct <= 0:
+        return frame_bgr
+    height = frame_bgr.shape[0]
+    keep = max(1, int(height * (1.0 - drop_bottom_pct / 100.0)))
+    return frame_bgr[:keep]
+
+
+def tiled_rows(model, frame_bgr, conf: float, iou: float, imgsz: int,
+               tile: int, overlap: float) -> list[dict]:
+    """Run detection on overlapping tiles plus one full-frame pass, then merge.
+
+    A sign that is 30px in the full frame is ~30px inside a 640px tile too — no
+    downscaling — which is the whole point. The extra full-frame pass catches signs
+    larger than a single tile, which tiling alone would cut in half.
+    """
+    height, width = frame_bgr.shape[:2]
+    if height <= tile and width <= tile:
+        return result_rows(
+            model.predict(frame_bgr, conf=conf, iou=iou, imgsz=imgsz, verbose=False)[0]
+        )
+
+    step = max(1, int(tile * (1.0 - overlap)))
+    crops, offsets = [], []
+    for y in tile_origins(height, tile, step):
+        for x in tile_origins(width, tile, step):
+            crops.append(frame_bgr[y : y + tile, x : x + tile])
+            offsets.append((x, y))
+
+    rows: list[dict] = []
+    for i in range(0, len(crops), TILE_BATCH):
+        chunk = crops[i : i + TILE_BATCH]
+        results = model.predict(chunk, conf=conf, iou=iou, imgsz=tile, verbose=False)
+        for result, (off_x, off_y) in zip(results, offsets[i : i + TILE_BATCH]):
+            for row in result_rows(result):
+                row["x1"] = round(row["x1"] + off_x, 1)
+                row["x2"] = round(row["x2"] + off_x, 1)
+                row["y1"] = round(row["y1"] + off_y, 1)
+                row["y2"] = round(row["y2"] + off_y, 1)
+                rows.append(row)
+
+    rows.extend(
+        result_rows(model.predict(frame_bgr, conf=conf, iou=iou, imgsz=imgsz, verbose=False)[0])
+    )
+    return nms_rows(rows, iou)
+
+
+def detect_rows(frame_bgr, settings: dict, *, use_roi: bool = True) -> list[dict]:
+    """Single entry point for every demo path. Returns rows in frame coordinates."""
     model = load_yolo(str(DEFAULT_WEIGHTS))
-    return model.predict(frame_bgr, conf=conf, iou=iou, imgsz=imgsz, verbose=False)[0]
+    working = apply_roi(frame_bgr, settings["drop_bottom_pct"]) if use_roi else frame_bgr
+
+    if settings["use_tiling"]:
+        return tiled_rows(
+            model,
+            working,
+            conf=settings["conf"],
+            iou=settings["iou"],
+            imgsz=settings["imgsz"],
+            tile=settings["tile"],
+            overlap=settings["overlap"],
+        )
+
+    result = model.predict(
+        working,
+        conf=settings["conf"],
+        iou=settings["iou"],
+        imgsz=settings["imgsz"],
+        verbose=False,
+    )[0]
+    return result_rows(result)
 
 
 def browser_safe_frame(frame_bgr):
@@ -690,9 +844,15 @@ def summarize_rows(rows: list[dict]) -> pd.DataFrame:
 
 class TrafficSignVideoProcessor(VideoProcessorBase):
     def __init__(self) -> None:
-        self.conf = 0.35
-        self.iou = 0.70
-        self.imgsz = 640
+        self.settings: dict = {
+            "conf": DEFAULT_CONF,
+            "iou": DEFAULT_IOU,
+            "imgsz": DEFAULT_IMGSZ,
+            "drop_bottom_pct": DEFAULT_DROP_BOTTOM_PCT,
+            "use_tiling": False,
+            "tile": DEFAULT_TILE_SIZE,
+            "overlap": DEFAULT_TILE_OVERLAP,
+        }
         self.duration = 10
         self.max_inference_fps = 8
         self.started_at = time.monotonic()
@@ -704,13 +864,12 @@ class TrafficSignVideoProcessor(VideoProcessorBase):
         self.class_counter: Counter[str] = Counter()
         self.stabilizer = DetectionStabilizer()
 
-    def configure(self, conf: float, iou: float, imgsz: int, duration: int, max_inference_fps: int) -> None:
+    def configure(self, settings: dict) -> None:
         with self.lock:
-            self.conf = conf
-            self.iou = iou
-            self.imgsz = imgsz
-            self.duration = duration
-            self.max_inference_fps = max_inference_fps
+            self.settings = dict(settings)
+            self.duration = settings["duration"]
+            self.max_inference_fps = settings["inference_fps"]
+            self.stabilizer.min_hits = max(1, settings["min_hits"])
 
     def reset(self) -> None:
         with self.lock:
@@ -746,16 +905,13 @@ class TrafficSignVideoProcessor(VideoProcessorBase):
             should_detect = elapsed <= self.duration and (
                 now - self.last_inference_at >= 1.0 / max(self.max_inference_fps, 1)
             )
-            conf = self.conf
-            iou = self.iou
-            imgsz = self.imgsz
+            settings = dict(self.settings)
             stable_rows = self.stabilizer.current()
 
         annotated = draw_detections(frame_bgr, stable_rows) if stable_rows else frame_bgr.copy()
 
         if should_detect:
-            result = predict_frame(frame_bgr, conf=conf, iou=iou, imgsz=imgsz)
-            rows = result_rows(result)
+            rows = detect_rows(frame_bgr, settings)
 
             with self.lock:
                 stable_rows = self.stabilizer.update(rows)
@@ -776,7 +932,7 @@ class TrafficSignVideoProcessor(VideoProcessorBase):
         return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
 
-def render_webcam_demo(conf: float, iou: float, imgsz: int, duration: int, inference_fps: int) -> None:
+def render_webcam_demo(settings: dict) -> None:
     if webrtc_streamer is None:
         st.error("Thiếu webcam dependencies. Cài bằng: pip install streamlit-webrtc av")
         return
@@ -792,7 +948,7 @@ def render_webcam_demo(conf: float, iou: float, imgsz: int, duration: int, infer
     )
 
     if ctx.video_processor:
-        ctx.video_processor.configure(conf, iou, imgsz, duration, inference_fps)
+        ctx.video_processor.configure(settings)
         if st.button("Reset webcam session"):
             ctx.video_processor.reset()
 
@@ -829,7 +985,7 @@ def render_webcam_demo(conf: float, iou: float, imgsz: int, duration: int, infer
             st.dataframe(summary, hide_index=True, width="stretch")
 
 
-def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_seconds: int) -> tuple[Path, pd.DataFrame, dict]:
+def process_video_file(uploaded_file, settings: dict) -> tuple[Path, pd.DataFrame, dict]:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     suffix = Path(uploaded_file.name).suffix or ".mp4"
 
@@ -846,7 +1002,7 @@ def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_s
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     width -= width % 2
     height -= height % 2
-    max_frames = int(max_seconds * fps)
+    max_frames = int(settings["duration"] * fps)
 
     output_path = OUTPUT_DIR / f"annotated_{int(time.time())}.mp4"
     writer = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
@@ -858,7 +1014,7 @@ def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_s
     all_rows: list[dict] = []
     processed = 0
     progress = st.progress(0)
-    stabilizer = DetectionStabilizer()
+    stabilizer = DetectionStabilizer(min_hits=settings["min_hits"])
 
     while processed < max_frames:
         ok, frame_bgr = cap.read()
@@ -866,8 +1022,7 @@ def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_s
             break
 
         frame_bgr = browser_safe_frame(frame_bgr)
-        result = predict_frame(frame_bgr, conf=conf, iou=iou, imgsz=imgsz)
-        rows = result_rows(result)
+        rows = detect_rows(frame_bgr, settings)
         stable_rows = stabilizer.update(rows)
         annotated = draw_detections(frame_bgr, stable_rows)
         writer.write(annotated)
@@ -887,12 +1042,22 @@ def process_video_file(uploaded_file, conf: float, iou: float, imgsz: int, max_s
         "duration_seconds": round(processed / max(fps, 1), 2),
         "detections": len(all_rows),
         "video_format": "H.264 / yuv420p",
+        "imgsz": settings["imgsz"],
+        "conf": settings["conf"],
+        "roi_drop_bottom_pct": settings["drop_bottom_pct"],
+        "tiling": "on" if settings["use_tiling"] else "off",
     }
     return playable_path, summarize_rows(all_rows), stats
 
 
-def render_video_demo(conf: float, iou: float, imgsz: int, duration: int) -> None:
+def render_video_demo(settings: dict) -> None:
     uploaded_video = st.file_uploader("Upload video", type=["mp4", "mov", "avi", "mkv"], key="video-upload")
+    st.caption(
+        f"Đang chạy ở imgsz={settings['imgsz']}, conf={settings['conf']:.2f}, "
+        f"bỏ {settings['drop_bottom_pct']}% đáy khung hình, "
+        f"tiling {'BẬT' if settings['use_tiling'] else 'TẮT'}. "
+        "Chỉnh trong sidebar nếu biển ở xa vẫn bị bỏ sót."
+    )
     if uploaded_video is None:
         st.info("Upload video ngắn để detect từng frame bằng model đã chọn.")
         return
@@ -900,7 +1065,7 @@ def render_video_demo(conf: float, iou: float, imgsz: int, duration: int) -> Non
     if st.button("Process video"):
         with st.spinner("Running YOLO on video frames..."):
             try:
-                output_path, summary, stats = process_video_file(uploaded_video, conf, iou, imgsz, duration)
+                output_path, summary, stats = process_video_file(uploaded_video, settings)
             except Exception as exc:
                 st.error(str(exc))
                 return
@@ -912,7 +1077,10 @@ def render_video_demo(conf: float, iou: float, imgsz: int, duration: int) -> Non
         cols[3].metric("Detections", stats["detections"])
 
         if summary.empty:
-            st.warning("Không phát hiện biển báo ở ngưỡng confidence hiện tại.")
+            st.warning(
+                "Không phát hiện biển báo ở ngưỡng confidence hiện tại. "
+                "Thử hạ Confidence xuống 0.10, tăng Image size lên 1536, hoặc bật Tiled inference."
+            )
         else:
             st.dataframe(summary, hide_index=True, width="stretch")
 
@@ -926,20 +1094,28 @@ def render_video_demo(conf: float, iou: float, imgsz: int, duration: int) -> Non
         )
 
 
-def render_image_demo(conf: float, iou: float, imgsz: int) -> None:
+def render_image_demo(settings: dict) -> None:
     camera_image = st.camera_input("Camera snapshot")
     uploaded_image = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"], key="image-upload")
     image_source = camera_image or uploaded_image
+
+    st.caption(
+        "Ảnh tĩnh không áp dụng cắt ROI (ảnh có thể được đóng khung bất kỳ), "
+        "nhưng vẫn dùng imgsz và tiling từ sidebar."
+    )
 
     if image_source is None:
         st.info("Chụp ảnh hoặc upload ảnh để chạy single-frame detection.")
         return
 
     image = Image.open(image_source).convert("RGB")
+    frame_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     with st.spinner("Detecting traffic signs..."):
-        result = load_yolo(str(DEFAULT_WEIGHTS)).predict(image, conf=conf, iou=iou, imgsz=imgsz, verbose=False)[0]
-        table = detection_table(result)
-        annotated = result.plot()
+        # use_roi=False: a still photo is not necessarily a dashcam frame, so cropping
+        # the bottom of it would be wrong.
+        rows = detect_rows(frame_bgr, settings, use_roi=False)
+        table = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
+        annotated = draw_detections(frame_bgr, rows)
 
     left, right = st.columns([1.4, 1])
     with left:
@@ -952,16 +1128,16 @@ def render_image_demo(conf: float, iou: float, imgsz: int) -> None:
             st.dataframe(table, hide_index=True, width="stretch")
 
 
-def render_demo_tab(conf: float, iou: float, imgsz: int, duration: int, inference_fps: int) -> None:
+def render_demo_tab(settings: dict) -> None:
     st.subheader("Demo nhận diện bằng mô hình tốt nhất")
     st.caption(f"Đang dùng: {display_path(DEFAULT_WEIGHTS)}")
     webcam_tab, video_tab, image_tab = st.tabs(["Webcam realtime", "Video upload", "Image snapshot"])
     with webcam_tab:
-        render_webcam_demo(conf, iou, imgsz, duration, inference_fps)
+        render_webcam_demo(settings)
     with video_tab:
-        render_video_demo(conf, iou, imgsz, duration)
+        render_video_demo(settings)
     with image_tab:
-        render_image_demo(conf, iou, imgsz)
+        render_image_demo(settings)
 
 
 def main() -> None:
@@ -971,7 +1147,7 @@ def main() -> None:
     check_model_ready()
     metrics = load_metrics(str(YOLO_METRICS))
     ckpt = load_checkpoint_summary(str(DEFAULT_WEIGHTS))
-    conf, iou, imgsz, duration, inference_fps = sidebar_controls(metrics)
+    settings = sidebar_controls(metrics)
 
     overview, data, experiments, selected, demo = st.tabs(
         ["Tổng Quan", "Phân Tích Dữ Liệu", "Thực Nghiệm Mô Hình", "Mô Hình Được Chọn", "Demo Nhận Diện"]
@@ -985,7 +1161,7 @@ def main() -> None:
     with selected:
         render_selected_model_tab(metrics, ckpt)
     with demo:
-        render_demo_tab(conf, iou, imgsz, duration, inference_fps)
+        render_demo_tab(settings)
 
 
 if __name__ == "__main__":

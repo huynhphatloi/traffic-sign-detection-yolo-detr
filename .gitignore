@@ -40,3 +40,6 @@ venv/
 /reports/
 /slides/
 configs/data.local.yaml
+
+# Local venv created by run_app.sh
+.venv-app/
