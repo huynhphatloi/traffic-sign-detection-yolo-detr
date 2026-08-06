@@ -1,0 +1,121 @@
+\chapter{TỔNG KẾT}
+\label{ch:tong_ket}
+
+\section{Tóm lược kết quả đạt được}
+
+Đề tài đã xây dựng một quy trình hoàn chỉnh cho bài toán phát hiện biển báo giao thông, từ khâu
+kiểm tra dữ liệu thô cho tới bảng số liệu so sánh cuối cùng, và tiến hành bốn nhóm thực nghiệm
+trên bộ dữ liệu \textit{pkdarabi/cardetection} gồm 4.969 ảnh với 6.012 hộp bao thuộc 15 lớp.
+
+Đối chiếu với ba câu hỏi nghiên cứu đặt ra ở Chương~\ref{ch:gioi_thieu}:
+
+\textbf{Câu hỏi 1.1} về so sánh giữa hai họ kiến trúc đã được trả lời rõ ràng. YOLOv8n đạt mAP@0,5
+bằng 0,9539 và mAP@0,5:0,95 bằng 0,8058 trên tập kiểm tra, với 6,25~MB trọng số và độ trễ 8,83~ms
+mỗi ảnh. DETR-ResNet50 chỉ đạt 0,1220 và 0,0988, đồng thời nặng hơn 26,6 lần và chậm hơn 7,2 lần.
+Tuy nhiên, kết luận đúng đắn không phải là ``kiến trúc transformer kém hơn'' mà là ``ở ngân sách
+dữ liệu và tính toán của đề tài này, DETR chưa được huấn luyện đủ''. Năm yếu tố gây nhiễu đã được
+phân tách ở Mục~\ref{sec:vi_sao_detr}, trong đó việc nhánh DETR không hề có tăng cường dữ liệu
+trong khi nhánh YOLO có đầy đủ là yếu tố ít được chú ý nhưng nhiều khả năng nặng ký nhất.
+
+\textbf{Câu hỏi 1.2} về kiến trúc nhẹ và nén mô hình cho câu trả lời phủ định ở phần lớn các nhánh.
+Cả ba kiến trúc thay thế đều kém hơn mốc tham chiếu của cùng giai đoạn, trong đó YOLO11n tốt nhất
+nhưng vẫn thấp hơn 3,81 điểm phần trăm. Ở nhóm nén mô hình, chỉ FP16 là lựa chọn không có nhược điểm: giữ nguyên độ
+chính xác trong khi giảm khoảng một nửa dung lượng. Lượng tử hoá INT8 giảm cả độ chính xác lẫn tốc
+độ trên môi trường thử nghiệm. Chưng cất tri thức cho kết quả âm rõ rệt.
+
+\textbf{Câu hỏi 1.3} về khoảng cách giữa chỉ số và thực tế là câu hỏi thu được câu trả lời có giá
+trị nhất. Phân tích thành phần bộ dữ liệu cho thấy 38,68\% số ảnh là ảnh cắt cận cảnh kiểu GTSRB
+với cạnh biển chiếm 66,8\% cạnh ảnh, trong khi 12,98\% là ảnh camera mắt cá với 99,6\% vật thể
+thuộc nhóm nhỏ. Phân bố kích thước vì vậy bị lưỡng cực, thiếu hẳn vùng trung gian tương ứng với
+biển báo ở khoảng cách lái xe thực tế. Con số 0,9539 do đó phản ánh năng lực trên phân bố của tập
+kiểm tra chứ không phản ánh năng lực trên cảnh đường phố thật.
+
+\section{Đóng góp}
+
+Ba đóng góp chính có thể rút ra.
+
+Thứ nhất, về mặt kỹ thuật, đề tài cung cấp một quy trình tái lập được với bộ sinh số ngẫu nhiên
+được gieo hạt tập trung, đường dẫn quản lý ở một nơi duy nhất, và bộ kiểm thử tự động gồm 43
+trường hợp chạy trên CPU trong khoảng một giây mà không cần GPU hay tải mô hình.
+
+Thứ hai, về mặt thực nghiệm, bảng so sánh mười cấu hình trên ba trục độ chính xác, tốc độ và dung
+lượng cho phép người đọc thấy được sự đánh đổi thay vì chỉ một con số duy nhất.
+
+Thứ ba, và quan trọng nhất, đề tài đóng góp một phân tích chỉ ra rằng chỉ số mAP cao trên tập kiểm
+tra có thể che giấu hoàn toàn một lỗ hổng năng lực, khi bộ dữ liệu được ghép từ nhiều nguồn có mục
+đích khác nhau. Việc kiểm tra phân bố kích thước vật thể \emph{theo từng nguồn} thay vì chỉ trên
+toàn tập nên được coi là bước bắt buộc trước khi diễn giải kết quả.
+
+\section{Hạn chế}
+
+Đề tài có những hạn chế sau, được nêu đầy đủ để người đọc đánh giá đúng phạm vi giá trị của kết
+quả.
+
+\textbf{Hai nhánh dùng hai cách tính mAP khác nhau.} Nhánh YOLO dùng bộ đánh giá của Ultralytics,
+nhánh DETR dùng thư viện torchmetrics. Hai cài đặt có thể khác nhau ở cách nội suy đường cong PR
+và cách xử lý ngưỡng IoU, nên chênh lệch giữa hai con số nên được đọc theo xu hướng chứ không theo
+từng chữ số. Cách khắc phục triệt để là đưa cả hai về cùng một bộ đánh giá COCO.
+
+\textbf{Bộ dữ liệu có rò rỉ giữa các tập.} Khảo sát ghi nhận 65 trong số 638 ảnh kiểm tra có bản
+sao trong tập huấn luyện, tức 10,2\%. Con số 0,9539 vì vậy nên được hiểu là cận trên.
+
+\textbf{Dung lượng mô hình được đo theo hai định nghĩa khác nhau.} Với YOLO, dung lượng lấy theo
+kích thước tệp trọng số trên đĩa, vốn được lưu ở độ chính xác 16 bit. Với DETR, dung lượng tính
+bằng tổng số byte của tham số ở độ chính xác 32 bit. Tỉ số 26,6 lần vì vậy phóng đại khoảng cách
+thực về số lượng tham số, vốn chỉ khoảng 13 lần.
+
+\textbf{Kết quả đến từ hai giai đoạn trên hai cấu hình phần cứng khác nhau.} Nhóm E0 thuộc giai
+đoạn 1, các nhóm E1, E2 và E3 thuộc giai đoạn 2. Cấu hình YOLOv8n xuất hiện ở cả hai và cho hai bộ số
+khác nhau (0,9539 và 113,2 khung hình mỗi giây so với 0,9633 và 65,3). Báo cáo đã xử lý bằng cách
+gắn nhãn giai đoạn cho từng dòng và chỉ so sánh trong nội bộ từng giai đoạn, nhưng đây vẫn là một hạn chế
+thực sự: nó khiến không thể đặt DETR và các kiến trúc ở nhóm E1 lên cùng một thước đo. Cách khắc
+phục là chạy lại toàn bộ mười cấu hình trong một lượt duy nhất trên cùng một máy.
+
+\textbf{Nhánh DETR không ghi Precision và Recall.} Mô-đun đánh giá DETR chỉ xuất mAP, kích thước mô
+hình và tốc độ, nên Bảng so sánh E0 để trống hai ô này. Đây là thiếu sót của quy trình chứ không
+phải giới hạn của phương pháp, và sửa được bằng vài dòng mã.
+
+\textbf{Phép đo tốc độ chưa hoàn toàn công bằng.} Nhánh YOLO được đo qua hàm dự đoán đầy đủ, bao
+gồm tiền xử lý và NMS, trong khi nhánh DETR chỉ đo lượt truyền xuôi thuần tuý trên đầu vào đã nằm
+sẵn trên thiết bị. Chiều thiên lệch này có lợi cho DETR, nên kết luận rằng YOLO nhanh hơn vẫn giữ
+nguyên giá trị, thậm chí là một ước lượng dè dặt.
+
+\textbf{Tập lớp bị giới hạn.} Mười lăm lớp chỉ gồm đèn tín hiệu và biển giới hạn tốc độ. Các nhóm
+biển cấm, biển nguy hiểm và biển chỉ dẫn hoàn toàn không có trong tập nhãn, nên mô hình không thể
+phát hiện chúng dù chất lượng huấn luyện có tốt đến đâu.
+
+\section{Hướng phát triển}
+
+Các hướng phát triển được sắp theo thứ tự ưu tiên, từ chi phí thấp tới chi phí cao.
+
+\textbf{Ưu tiên 1 --- Thống nhất bộ đánh giá cho toàn bộ thực nghiệm.} Nhóm E3 đã dùng pycocotools
+và nhờ đó có $AP$ tách theo ba nhóm kích thước --- chỉ số cho thấy mọi khác biệt giữa các cấu hình
+đều nằm ở vật thể nhỏ. Áp dụng cùng bộ đánh giá đó cho các nhóm E0, E1 và E2 sẽ vừa bổ sung chỉ số
+này cho toàn bộ mười cấu hình, vừa khắc phục hạn chế về hai cách tính mAP khác nhau giữa nhánh YOLO
+và nhánh DETR. Đây là việc rẻ nhất trong danh sách vì mã đánh giá đã có sẵn.
+
+\textbf{Ưu tiên 2 --- Làm sạch và cân bằng lại bộ dữ liệu.} Loại bỏ 65 ảnh kiểm tra bị trùng, sau
+đó thử huấn luyện lại khi đã loại hoặc giảm mạnh nhóm 1.922 ảnh cắt kiểu GTSRB. Giả thuyết là
+mAP tổng sẽ giảm nhưng $AP$ trên nhóm vật thể nhỏ và hiệu năng trên video thật sẽ tăng --- bản thân
+việc kiểm chứng giả thuyết này đã là một thí nghiệm có giá trị.
+
+\textbf{Ưu tiên 3 --- Điều chỉnh kiến trúc cho vật thể nhỏ.} Huấn luyện ở kích thước ảnh 960 hoặc
+1280 thay vì 640, và bổ sung đầu dự đoán P2 hoạt động ở bước sải 4 thay vì 8. Đây là biện pháp rẻ
+hơn nhiều so với chuyển sang một mô hình lớn hơn.
+
+\textbf{Ưu tiên 4 --- Tách bài toán thành hai giai đoạn.} Một bộ phát hiện không phân biệt lớp để
+định vị biển báo, kết hợp một bộ phân lớp riêng chạy trên ảnh đã cắt. Cách tổ chức này giải quyết
+trực tiếp hiện tượng nhầm lẫn giữa các biển giới hạn tốc độ đã quan sát ở ma trận nhầm lẫn, đồng
+thời tận dụng đúng mục đích của 1.922 ảnh cắt kiểu GTSRB.
+
+\textbf{Ưu tiên 5 --- Bổ sung dữ liệu đúng miền.} Không kỹ thuật tăng cường nào thay thế được dữ
+liệu thật đúng miền. Gán nhãn vài trăm khung hình từ camera hành trình trong điều kiện giao thông
+mục tiêu rồi tinh chỉnh sẽ có tác động lớn hơn mọi biện pháp nêu trên. Quy trình tiết kiệm nhất là
+dùng mô hình hiện tại sinh nhãn giả ở ngưỡng tin cậy thấp, sửa tay, rồi tinh chỉnh. Nếu cần bổ
+sung dữ liệu công khai, TT100K~\cite{zhu2016tt100k} và Mapillary Traffic
+Sign~\cite{ertler2020mapillary} là hai lựa chọn phù hợp vì đều là ảnh cảnh đường thật.
+
+\textbf{Ưu tiên 6 --- Huấn luyện DETR trong điều kiện công bằng.} Tăng số chu kỳ lên gấp mười tới
+ba mươi lần, tăng kích thước lô hiệu dụng bằng cách tích luỹ gradient, bổ sung tăng cường dữ liệu
+tương đương nhánh YOLO, và cân nhắc dùng Deformable DETR~\cite{zhu2021deformabledetr} vốn hội tụ
+nhanh hơn đáng kể. Chỉ khi đó mới có thể kết luận điều gì về so sánh giữa hai họ kiến trúc.

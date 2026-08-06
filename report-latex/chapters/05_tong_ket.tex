@@ -1,0 +1,132 @@
+\chapter{TỔNG KẾT}
+\label{ch:tong_ket}
+
+\section{Tóm lược kết quả đạt được}
+
+Đề tài đã khảo sát hai kỹ thuật nén mô hình --- chưng cất tri thức và lượng tử hoá sau huấn luyện
+--- cho bài toán phát hiện biển báo giao thông, trên bộ dữ liệu \textit{pkdarabi/cardetection} gồm
+4.969 ảnh với 6.012 hộp bao thuộc 15 lớp. Năm cấu hình được huấn luyện và đánh giá trong cùng một
+lượt chạy, bằng cùng một bộ tính độ đo.
+
+Đối chiếu với ba câu hỏi nghiên cứu đặt ra ở Chương~\ref{ch:gioi_thieu}:
+
+\textbf{Câu hỏi 1.1} về chưng cất tri thức nhận câu trả lời \emph{phủ định}. Mô hình học trò được
+chưng cất đạt mAP@0,5 bằng 0,9014, thấp hơn chính nó khi huấn luyện thông thường (0,9348) 3,34 điểm
+phần trăm. Cơ chế chưng cất đã được xác minh là thực sự hoạt động thông qua cột mất mát riêng trong
+nhật ký huấn luyện, giảm từ 12,1663 xuống 1,1608. Nguyên nhân khả dĩ nhất là khoảng cách năng lực
+giữa thầy và trò quá hẹp --- chỉ 1,72 điểm phần trăm --- khiến lượng tri thức có thể truyền đạt
+không bù nổi chi phí nhiễu.
+
+\textbf{Câu hỏi 1.2} về lượng tử hoá cho thấy một sự đánh đổi phức tạp hơn nhiều so với thường được
+trình bày. Về dung lượng, INT8 đạt mục tiêu rõ ràng: giảm 70,3\%. Về tốc độ, kết quả trái ngược kỳ
+vọng --- bản INT8 chậm hơn bản FP32 hơn hai lần do môi trường thực thi không có nhân tính toán số
+nguyên được tối ưu. Về độ chính xác, mAP@0,5 chỉ giảm 0,0038 nhưng $AP$ trên vật thể nhỏ giảm
+0,0247.
+
+\textbf{Câu hỏi 1.3} về tính đại diện của mAP tổng là câu hỏi thu được câu trả lời có giá trị nhất.
+Mức suy giảm trên vật thể nhỏ lớn gấp 1,9 lần mAP tổng ở phép chưng cất, và gấp 6,5 lần ở phép
+lượng tử hoá. Nguyên nhân nằm ở phân bố dữ liệu: 51,30\% số hộp bao thuộc nhóm lớn --- nhóm mà mọi
+cấu hình đều xử lý tốt như nhau --- nên chúng chi phối giá trị trung bình và pha loãng suy giảm ở
+nhóm khó.
+
+\section{Đóng góp}
+
+Ba đóng góp chính có thể rút ra.
+
+Thứ nhất, về mặt phương pháp thực nghiệm, đề tài thiết lập một thiết kế có đối chứng đúng nghĩa: mô
+hình học trò được huấn luyện hai lần với cùng số chu kỳ, cùng hạt ngẫu nhiên, cùng kích thước ảnh,
+chỉ khác ở việc bật hay tắt chưng cất. Kèm theo đó là năm ngưỡng chấp nhận khai báo trước khi chạy,
+và cơ chế xác minh rằng kỹ thuật khảo sát đã thực sự được kích hoạt.
+
+Thứ hai, và quan trọng nhất, đề tài cung cấp bằng chứng định lượng cho thấy \textbf{mAP tổng che
+giấu chi phí thật của việc nén mô hình}. Một cấu hình được tổng kết là ``giảm 70\% dung lượng, chỉ
+mất 0,4\% mAP'' thực chất mất 2,47 điểm phần trăm ở nhóm vật thể nhỏ. Với bài toán biển báo giao
+thông, nơi biển ở xa quyết định thời gian phản ứng của xe, sự khác biệt này có ý nghĩa an toàn trực
+tiếp. Kiến nghị rút ra là mọi báo cáo về nén mô hình cho bài toán phát hiện nên kèm $AP$ tách theo
+nhóm kích thước --- chi phí bổ sung gần như bằng không nếu đã dùng bộ đánh giá COCO.
+
+Ngoài ra, luận điểm này được kiểm chứng độc lập trên dữ liệu ngoài phân bố: trên ba đoạn video
+đường phố, việc tăng độ phân giải đầu vào làm số phát hiện ở nhóm vật thể nhỏ tăng 6,1 lần trong khi
+nhóm vừa chỉ tăng 1,4 lần. Tính chọn lọc theo kích thước này là chữ ký của cơ chế đã nêu, chứ không
+phải của nhiễu ngẫu nhiên.
+
+Thứ ba, đề tài chỉ ra hai vấn đề của một bộ dữ liệu công khai đang được dùng rộng rãi: 38,68\% số
+ảnh là ảnh cắt cận cảnh kiểu GTSRB khiến phân bố kích thước bị lưỡng cực, và 10,2\% tập kiểm tra có
+bản sao trong tập huấn luyện.
+
+\section{Hạn chế}
+
+Đề tài có những hạn chế sau, được nêu đầy đủ để người đọc đánh giá đúng phạm vi giá trị của kết
+quả.
+
+\textbf{Kích thước lô không đồng nhất giữa hai nhánh học trò.} Nhánh chưng cất dùng lô 8, nhánh đối
+chứng dùng 24, do ràng buộc bộ nhớ card đồ hoạ khi phải nạp đồng thời cả hai mô hình. Đây là yếu tố
+gây nhiễu chưa kiểm soát được, và vì nó, kết luận đúng đắn là ``trong cấu hình cụ thể này, chưng
+cất không mang lại lợi ích'' chứ không phải ``chưng cất có hại''.
+
+\textbf{Hệ số chưng cất chưa được quét.} Giá trị 6,0 là mặc định của thư viện. Không loại trừ khả
+năng một giá trị nhỏ hơn sẽ cho kết quả khác.
+
+\textbf{Bộ dữ liệu có rò rỉ giữa các tập.} 65 trong số 638 ảnh kiểm tra có bản sao trong tập huấn
+luyện, tức 10,2\%. Mọi con số mAP tuyệt đối vì vậy nên được hiểu là cận trên. Các phép so sánh
+tương đối ít bị ảnh hưởng hơn vì rò rỉ tác động như nhau tới cả năm cấu hình.
+
+\textbf{Chỉ khảo sát một cặp thầy--trò.} Kết luận về chưng cất được rút ra từ đúng một cặp
+YOLO26s--YOLO26n. Muốn kết luận tổng quát cần khảo sát nhiều cặp có khoảng cách năng lực khác nhau.
+
+\textbf{Lượng tử hoá chỉ đo trên một môi trường thực thi.} Kết quả tốc độ của INT8 phụ thuộc mạnh
+vào nhân tính toán của phần cứng đích, nên con số thu được ở đây không nên tổng quát hoá cho các
+môi trường khác.
+
+\textbf{Tập lớp bị giới hạn.} Mười lăm lớp chỉ gồm đèn tín hiệu và biển giới hạn tốc độ. Các nhóm
+biển cấm, biển nguy hiểm và biển chỉ dẫn hoàn toàn không có trong tập nhãn, nên mô hình không thể
+phát hiện chúng dù chất lượng huấn luyện có tốt đến đâu.
+
+\textbf{Phép kiểm chứng trên video không có nhãn thật.} Ba đoạn video ở Mục~\ref{sec:video} chưa
+được gán nhãn, nên mục đó chỉ báo cáo các đại lượng quan sát được chứ không báo cáo độ chính xác.
+Không thể loại trừ hoàn toàn khả năng một phần phát hiện thêm là dương tính giả, dù độ tin cậy trung
+bình không sụt và tính chọn lọc theo kích thước đều nghiêng về giả thuyết ngược lại. Ngoài ra phép
+kiểm chứng này dùng trọng số YOLOv8n của ứng dụng trình diễn chứ không phải các mô hình YOLO26 ở
+những mục khác, nên không so sánh trực tiếp được.
+
+\textbf{Chưa đo trên tập kiểm tra sạch.} Báo cáo đã xác định được 573 ảnh không bị rò rỉ nhưng chưa
+tính lại toàn bộ chỉ số riêng trên tập con này.
+
+\section{Hướng phát triển}
+
+Các hướng phát triển được sắp theo thứ tự ưu tiên, từ chi phí thấp tới chi phí cao.
+
+\textbf{Ưu tiên 1 --- Đo lại trên tập kiểm tra sạch.} Tập 573 ảnh không rò rỉ đã được xác định; chỉ
+cần chạy lại khâu đánh giá trên tập con này để có bộ số không bị thổi phồng. Chi phí gần như bằng
+không vì không phải huấn luyện lại.
+
+\textbf{Ưu tiên 2 --- Chạy lại nhánh chưng cất với kích thước lô đồng nhất.} Dùng tích luỹ gradient
+để đạt kích thước lô hiệu dụng bằng 24 như nhánh đối chứng, qua đó loại bỏ yếu tố gây nhiễu lớn
+nhất hiện nay. Chỉ sau bước này mới có thể kết luận chắc chắn về tác dụng của chưng cất.
+
+\textbf{Ưu tiên 3 --- Quét hệ số chưng cất.} Thử các giá trị nhỏ hơn 6,0 để kiểm chứng giả thuyết
+rằng thành phần bắt chước đang lấn át tín hiệu từ nhãn cứng.
+
+\textbf{Ưu tiên 4 --- Mở rộng khoảng cách thầy--trò.} Dùng một mô hình thầy lớn hơn hẳn để tạo
+khoảng cách năng lực đủ rộng, qua đó kiểm chứng trực tiếp giả thuyết về điều kiện áp dụng của chưng
+cất.
+
+\textbf{Ưu tiên 5 --- Làm sạch và cân bằng lại bộ dữ liệu.} Loại bỏ các ảnh trùng, sau đó thử huấn
+luyện lại khi đã loại hoặc giảm mạnh nhóm 1.922 ảnh cắt kiểu GTSRB. Giả thuyết là mAP tổng sẽ giảm
+nhưng $AP$ trên nhóm vật thể nhỏ sẽ tăng --- bản thân việc kiểm chứng giả thuyết này đã là một thí
+nghiệm có giá trị.
+
+\textbf{Ưu tiên 6 --- Gán nhãn một tập khung hình video và đo $AP$ thật.} Phép kiểm chứng ở
+Mục~\ref{sec:video} mới dừng ở mức nhất quán với giả thuyết. Gán nhãn thủ công vài trăm khung hình
+từ ba video đã có sẽ biến nó thành một phép đo $AP$ đúng nghĩa trên dữ liệu ngoài phân bố --- thứ có
+giá trị hơn hẳn mọi chỉ số trên tập kiểm tra cùng phân bố.
+
+\textbf{Ưu tiên 7 --- Điều chỉnh kiến trúc cho vật thể nhỏ.} Vì toàn bộ phân tích ở
+Chương~\ref{ch:ket_qua} đều chỉ về nhóm vật thể nhỏ, hướng cải thiện tự nhiên là bổ sung đầu dự
+đoán P2 hoạt động ở bước sải 4 thay vì 8, hoặc huấn luyện ở kích thước ảnh lớn hơn. Đây là biện
+pháp rẻ hơn nhiều so với chuyển sang một mô hình lớn hơn.
+
+\textbf{Ưu tiên 8 --- Bổ sung dữ liệu đúng miền.} Không kỹ thuật nào thay thế được dữ liệu thật
+đúng miền. Nếu cần bổ sung dữ liệu công khai, TT100K~\cite{zhu2016tt100k} và Mapillary Traffic
+Sign~\cite{ertler2020mapillary} là hai lựa chọn phù hợp vì đều là ảnh cảnh đường thật, qua đó lấp
+được đúng vùng kích thước trung gian mà bộ dữ liệu hiện tại đang thiếu.

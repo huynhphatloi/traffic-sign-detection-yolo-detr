@@ -1,0 +1,13 @@
+
+# Tệp trung gian khi biên dịch LaTeX
+*.aux
+*.log
+*.out
+*.toc
+*.lot
+*.lof
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz

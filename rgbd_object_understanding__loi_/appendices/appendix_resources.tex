@@ -1,0 +1,108 @@
+\chapter*{PHỤ LỤC}
+\addcontentsline{toc}{chapter}{PHỤ LỤC}
+\markboth{PHỤ LỤC}{}
+
+Phụ lục liệt kê toàn bộ tài nguyên công khai phục vụ việc tái lập (reproducibility) kết quả đề
+tài. Tất cả các URL dưới đây có thể truy cập công khai tại thời điểm nộp đề tài.
+
+\section*{Phụ lục A: Mã nguồn (GitHub)}
+\addcontentsline{toc}{section}{Phụ lục A: Mã nguồn (GitHub)}
+\label{app:github}
+
+\begin{itemize}[leftmargin=1.5cm]
+\item \textbf{Repository chính:}\\
+\url{https://github.com/huynhphtloi/rgbd-object-understanding}
+\item \textbf{Cấu trúc thư mục quan trọng:}
+\begin{itemize}
+\item \texttt{config/} --- tệp cấu hình YAML (dữ liệu, huấn luyện, demo, tri thức kích thước)
+\item \texttt{src/data/} --- tải và chuyển đổi OCID, COCO; sinh cảnh tổng hợp
+\item \texttt{src/segmentation/} --- huấn luyện và suy luận YOLO-seg
+\item \texttt{src/depth/} --- chiếu ngược, đám mây điểm, tách mặt phẳng, MiDaS
+\item \texttt{src/recognition/} --- nhận diện từ vựng mở bằng CLIP kèm cơ chế từ chối
+\item \texttt{src/knowledge/} --- bảng kích thước tiên nghiệm và hiệu chỉnh tỉ lệ
+\item \texttt{src/reasoning/} --- luật quan hệ và dựng đồ thị cảnh
+\item \texttt{src/evaluation/} --- sáu kịch bản đánh giá dùng trong Chương~\ref{ch:ket_qua}
+\item \texttt{outputs/metrics/} --- tệp JSON kết quả gốc của mọi con số đã báo cáo
+\item \texttt{tests/} --- 74 kiểm thử tự động
+\item \texttt{notebooks/} --- notebook Colab chạy đầu-cuối
+\item \texttt{report/} --- mã nguồn \LaTeX{} của đề tài này
+\end{itemize}
+\end{itemize}
+
+\section*{Phụ lục B: Bộ dữ liệu và trọng số}
+\addcontentsline{toc}{section}{Phụ lục B: Bộ dữ liệu và trọng số}
+\label{app:dataset}
+
+\begin{itemize}[leftmargin=1.5cm]
+\item \textbf{OCID --- Object Clutter Indoor Dataset:}\\
+{\small\sloppy\url{https://www.acin.tuwien.ac.at/en/vision-for-robotics/software-tools/object-clutter-indoor-dataset/}\par}
+\begin{itemize}
+\item Quy mô sử dụng: tập kiểm thử 26 chuỗi cảnh, 312 khung hình
+\item Đơn vị độ sâu: milimet (hệ số quy đổi $0{,}001$ về mét)
+\item Ngày truy cập: 04/08/2026
+\end{itemize}
+
+\item \textbf{COCO val2017:} \url{https://cocodataset.org/}
+\begin{itemize}
+\item Quy mô sử dụng: 200 ảnh đầu tiên theo thứ tự tất định
+\item Nhãn sử dụng: mặt nạ instance và tên lớp do người gán
+\item Ngày truy cập: 04/08/2026
+\end{itemize}
+
+\item \textbf{Trọng số phân vùng đã huấn luyện:}\\
+{\small\sloppy\url{https://huggingface.co/loihuynh/rgbd-object-understanding-yolo-seg}\par}
+\begin{itemize}
+\item Tệp: \texttt{best.pt} --- kiến trúc YOLOv8n-seg, một lớp \texttt{object}
+\item Huấn luyện: 100 epoch, kích thước ảnh 640, batch 8, hạt giống 42
+\item Mã băm SHA-256:\\
+{\footnotesize\texttt{152a8923e81d14d3a90a9204c4be17bc}\\
+\texttt{76de5c1a5caf1845cb423a7c0cafd771}\par}
+\end{itemize}
+\end{itemize}
+
+\hopnhanmanh[Lưu ý khi tái lập]{Nếu thiếu tệp \texttt{best.pt}, hệ thống vẫn chạy được nhưng sẽ
+tự động lùi về mô hình COCO \texttt{yolov8m-seg} dùng theo kiểu class-agnostic. Đó \emph{không}
+phải hệ thống đã được đánh giá và sẽ không tái lập được các con số trong báo cáo. Cần đối chiếu mã băm SHA-256 trước khi trích dẫn bất kỳ kết quả nào trong báo cáo.}
+
+\section*{Phụ lục C: Hướng dẫn tái lập}
+\addcontentsline{toc}{section}{Phụ lục C: Hướng dẫn tái lập}
+\label{app:repro}
+
+\begin{lstlisting}[language=bash,caption={Các bước tái lập toàn bộ kết quả của đề tài}]
+# 1. Cai dat moi truong
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Tai trong so da huan luyen va doi chieu ma bam
+python3 -c "
+from huggingface_hub import hf_hub_download
+import shutil, pathlib
+dst = pathlib.Path('outputs/models/rgb_yolo_seg_baseline/weights')
+dst.mkdir(parents=True, exist_ok=True)
+src = hf_hub_download('loihuynh/rgbd-object-understanding-yolo-seg', 'best.pt')
+shutil.copy(src, dst / 'best.pt')"
+shasum -a 256 outputs/models/rgb_yolo_seg_baseline/weights/best.pt
+
+# 3. Kiem thu nhanh - khong can tai du lieu
+python3 -m pytest                                    # 74 tests
+
+# 4. Chuan bi du lieu
+python3 -m src.data.download_ocid   --out data/raw/ocid
+python3 -m src.data.split_by_scene  --root data/raw/ocid
+python3 -m src.data.fetch_coco_gt   --out data/samples/coco_val --limit 200
+
+# 5. Sau thi nghiem danh gia (theo dung thu tu trong Chuong 4)
+python3 -m src.evaluation.eval_segmentation
+python3 -m src.evaluation.eval_counting              --limit 200
+python3 -m src.evaluation.eval_identification_coco   --images data/samples/coco_val
+python3 -m src.evaluation.eval_scale_control         --synthetic
+python3 -m src.evaluation.eval_measurement_rgbd      --root data/raw/ocid --limit 50
+python3 -m src.evaluation.eval_relations_synthetic
+\end{lstlisting}
+
+\textbf{Môi trường đã dùng để tạo ra kết quả:} Python 3.11; các thư viện chính được ghim phiên
+bản chính xác trong \texttt{requirements.txt} (PyTorch 2.8.0, Ultralytics 8.4.67, open\_clip\_%
+torch 3.3.0, Open3D 0.18.0, NumPy 2.0.2); hạt giống ngẫu nhiên 42 cho cả bước chia dữ liệu lẫn
+bước huấn luyện. Mọi tệp JSON kết quả gốc đều được lưu trong thư mục
+\texttt{outputs/metrics/} của kho mã nguồn, để đối chiếu trực tiếp với các bảng số liệu ở
+Chương~\ref{ch:ket_qua}.

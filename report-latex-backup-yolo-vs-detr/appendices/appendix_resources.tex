@@ -1,0 +1,129 @@
+\chapter*{PHỤ LỤC}
+\addcontentsline{toc}{chapter}{PHỤ LỤC}
+\markboth{PHỤ LỤC}{}
+
+Phụ lục liệt kê tài nguyên và chi tiết kỹ thuật phục vụ việc tái lập kết quả đề tài.
+
+\section*{A. Tài nguyên công khai}
+\addcontentsline{toc}{section}{A. Tài nguyên công khai}
+
+\begin{table}[H]
+\centering
+\caption{Tài nguyên sử dụng trong đề tài}
+\label{tab:tainguyen}
+\small
+\begin{tabular}{p{4.0cm} p{9.5cm}}
+\toprule
+\textbf{Tài nguyên} & \textbf{Địa chỉ / định danh} \\
+\midrule
+Bộ dữ liệu & \url{https://www.kaggle.com/datasets/pkdarabi/cardetection} \\
+Trọng số YOLOv8n & \texttt{yolov8n.pt} --- Ultralytics, tiền huấn luyện trên COCO \\
+Trọng số DETR & \texttt{facebook/detr-resnet-50} --- Hugging Face Hub \\
+Thư viện phát hiện & Ultralytics YOLO \cite{jocher2023ultralytics} \\
+Thư viện transformer & Hugging Face Transformers \cite{wolf2020transformers} \\
+Nền tảng học sâu & PyTorch \cite{paszke2019pytorch} \\
+Môi trường huấn luyện & Google Colab, GPU đơn \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{B. Danh sách lớp}
+\addcontentsline{toc}{section}{B. Danh sách lớp}
+
+Mười lăm lớp được giữ nguyên theo bộ dữ liệu gốc, không gộp và không ánh xạ lại:
+
+\begin{table}[H]
+\centering
+\caption{Danh sách 15 lớp và mã tương ứng}
+\label{tab:danhsachlop}
+\small
+\begin{tabular}{clcl}
+\toprule
+\textbf{Mã} & \textbf{Tên lớp} & \textbf{Mã} & \textbf{Tên lớp} \\
+\midrule
+0 & Green Light      & 8  & Speed Limit 40 \\
+1 & Red Light        & 9  & Speed Limit 50 \\
+2 & Speed Limit 10   & 10 & Speed Limit 60 \\
+3 & Speed Limit 100  & 11 & Speed Limit 70 \\
+4 & Speed Limit 110  & 12 & Speed Limit 80 \\
+5 & Speed Limit 120  & 13 & Speed Limit 90 \\
+6 & Speed Limit 20   & 14 & Stop \\
+7 & Speed Limit 30   &    & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{C. Cách chạy lại quy trình}
+\addcontentsline{toc}{section}{C. Cách chạy lại quy trình}
+
+Mỗi bước của quy trình là một mô-đun độc lập, gọi được trực tiếp từ dòng lệnh:
+
+\begin{lstlisting}[language=bash, caption={Các lệnh chạy lại từng bước của quy trình}, label={lst:cmds}]
+# 1. Kiem tra du lieu va dong bo tep cau hinh
+python -m src.data.inspect_dataset --write-configs
+
+# 2. Kiem tra chat luong nhan
+python -m src.data.validate_labels
+
+# 3. Phan tich kham pha du lieu
+python -m src.eda.class_distribution
+python -m src.eda.bbox_statistics
+python -m src.eda.image_statistics
+python -m src.eda.heatmap_analysis
+
+# 4. Huan luyen va danh gia nhanh YOLO  (can GPU)
+python -m src.training.train_yolo --model yolov8n.pt --epochs 30
+python -m src.evaluation.evaluate_yolo --split test
+
+# 5. Chuyen sang COCO, huan luyen va danh gia nhanh DETR  (can GPU)
+python -m src.data.convert_to_coco
+python -m src.training.train_detr
+python -m src.evaluation.evaluate_detr --split test
+
+# 6. Tong hop bang so sanh
+python -m src.evaluation.compare_models
+
+# 7. Chay bo kiem thu tu dong  (chi can CPU, khoang 1 giay)
+pytest
+\end{lstlisting}
+
+\section*{D. Bảng ánh xạ hình vẽ và nguồn dữ liệu}
+\addcontentsline{toc}{section}{D. Bảng ánh xạ hình vẽ và nguồn dữ liệu}
+
+Mọi hình và bảng số liệu trong báo cáo đều được sinh ra từ dữ liệu thật, không có số liệu minh
+hoạ. Bảng~\ref{tab:anhxa} chỉ rõ nguồn của từng nhóm.
+
+\begin{table}[H]
+\centering
+\caption{Ánh xạ giữa nội dung báo cáo và tệp kết quả sinh ra bởi quy trình}
+\label{tab:anhxa}
+\small
+\begin{tabular}{p{5.6cm} p{7.9cm}}
+\toprule
+\textbf{Nội dung trong báo cáo} & \textbf{Nguồn} \\
+\midrule
+Bảng thống kê tổng quan     & \texttt{results/tables/dataset\_summary.csv} \\
+Bảng và hình phân bố lớp    & \texttt{results/tables/class\_distribution.csv} \\
+Bảng phân nhóm kích thước   & \texttt{results/tables/bbox\_size\_categories.csv} \\
+Thống kê ảnh                & \texttt{results/tables/image\_statistics.csv} \\
+Báo cáo chất lượng nhãn     & \texttt{results/tables/data\_quality\_report.csv} \\
+Chỉ số YOLO                 & \texttt{results/metrics/yolo\_baseline.json} \\
+Chỉ số DETR                 & \texttt{results/metrics/detr\_baseline.json} \\
+Đường cong huấn luyện, PR, $F_1$, ma trận nhầm lẫn & Thư mục chạy của Ultralytics \\
+Bảng thành phần bộ dữ liệu & Phân tích bổ sung theo quy ước đặt tên tệp \\
+ Bảng và số liệu nhóm E3     & \texttt{notebooks/giaidoan2.ipynb} (đánh giá bằng pycocotools) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{E. Ghi chú về tính tái lập}
+\addcontentsline{toc}{section}{E. Ghi chú về tính tái lập}
+
+Hạt ngẫu nhiên mặc định là 42, được đặt cho biến môi trường băm của Python, thư viện ngẫu nhiên
+chuẩn, NumPy, PyTorch và PyTorch CUDA. Chế độ tất định của cuDNN được bật và chế độ tự dò thuật
+toán nhanh nhất được tắt --- điều này làm chậm huấn luyện một chút nhưng là điều kiện cần để kết
+quả lặp lại được giữa các lần chạy.
+
+Cần lưu ý rằng ngay cả khi đã gieo hạt đầy đủ, kết quả vẫn có thể sai khác nhỏ giữa các phiên bản
+thư viện, các kiến trúc GPU khác nhau và giữa chế độ CPU với GPU. Các con số trong báo cáo được đo
+trên môi trường Google Colab với GPU đơn tại thời điểm thực hiện đề tài.

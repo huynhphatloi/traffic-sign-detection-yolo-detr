@@ -1,0 +1,258 @@
+\chapter{CƠ SỞ LÝ THUYẾT VÀ CÔNG TRÌNH LIÊN QUAN}
+\label{ch:co_so}
+
+\section{Bài toán phát hiện đối tượng}
+
+\subsection{Phát biểu bài toán}
+
+Cho một ảnh $I \in \mathbb{R}^{H \times W \times 3}$, bài toán phát hiện đối tượng yêu cầu sinh ra
+một tập hợp
+\begin{equation}
+\label{eq:phatbieu}
+\mathcal{D} = \{(c_i, b_i, s_i)\}_{i=1}^{N},
+\end{equation}
+trong đó $c_i \in \{1,\dots,K\}$ là nhãn lớp, $b_i = (x_i, y_i, w_i, h_i)$ là hộp bao và
+$s_i \in [0,1]$ là điểm tin cậy. Số lượng vật thể $N$ không biết trước và thay đổi theo từng ảnh
+--- đây chính là điểm khiến bài toán khó hơn phân lớp ảnh, nơi đầu ra luôn là một véc-tơ có kích
+thước cố định.
+
+Lịch sử phát triển của lĩnh vực đi qua hai dòng lớn. Dòng hai giai đoạn, tiêu biểu là Faster
+R-CNN~\cite{ren2017fasterrcnn}, tách bài toán thành bước đề xuất vùng rồi mới phân loại và tinh
+chỉnh hộp bao; độ chính xác cao nhưng chi phí tính toán lớn. Dòng một giai đoạn, khởi đầu từ
+YOLO~\cite{redmon2016yolo} và SSD~\cite{liu2016ssd}, dự đoán trực tiếp hộp bao và lớp trên bản đồ
+đặc trưng chỉ trong một lượt truyền xuôi, đổi một phần độ chính xác lấy tốc độ đủ cho ứng dụng thời
+gian thực. Đề tài này làm việc hoàn toàn trong dòng thứ hai.
+
+\subsection{Định dạng chú thích}
+
+Hai định dạng chú thích được dùng trong đề tài. Định dạng YOLO lưu mỗi vật thể trên một dòng văn
+bản gồm \texttt{class\_id}, tâm hộp $(x_c, y_c)$ và kích thước $(w, h)$, tất cả đã chuẩn hoá về
+đoạn $[0,1]$ theo kích thước ảnh; đây là định dạng mà thư viện huấn luyện đọc trực tiếp. Định dạng
+COCO~\cite{lin2014coco} dùng một tệp JSON duy nhất chứa ba khối \texttt{images},
+\texttt{annotations} và \texttt{categories}, với hộp bao lưu theo góc trên trái và kích thước tuyệt
+đối tính bằng điểm ảnh.
+
+Phép chuyển từ YOLO sang COCO là bước bắt buộc trong đề tài vì khâu đánh giá dùng pycocotools. Công
+thức chuyển đổi:
+\begin{align}
+\label{eq:yolo2coco}
+x_{\text{trái}} &= \left(x_c - \tfrac{w}{2}\right) \cdot W_{\text{ảnh}}, &
+y_{\text{trên}} &= \left(y_c - \tfrac{h}{2}\right) \cdot H_{\text{ảnh}}, \\
+w_{\text{tuyệt đối}} &= w \cdot W_{\text{ảnh}}, &
+h_{\text{tuyệt đối}} &= h \cdot H_{\text{ảnh}}. \nonumber
+\end{align}
+Trường \texttt{area} bằng tích $w_{\text{tuyệt đối}} \cdot h_{\text{tuyệt đối}}$. Trường này không
+chỉ mang tính mô tả: bộ đánh giá COCO dùng chính nó để phân nhóm vật thể thành nhỏ, trung bình và
+lớn khi tính $AP$ theo kích thước --- chỉ số trung tâm của đề tài này.
+
+\section{Bộ phát hiện một giai đoạn}
+
+\subsection{Nguyên lý chung}
+
+Bộ phát hiện một giai đoạn bỏ hẳn bước đề xuất vùng. Ảnh đi qua một mạng xương sống tích chập để
+sinh bản đồ đặc trưng, sau đó một đầu dự đoán gắn trực tiếp lên bản đồ đó sẽ xuất ra hộp bao và
+điểm phân lớp cho từng vị trí. Vì toàn bộ quá trình chỉ cần một lượt truyền xuôi, tốc độ suy luận
+cao hơn đáng kể so với dòng hai giai đoạn~\cite{redmon2016yolo}.
+
+Điểm yếu cố hữu của cách làm này là mất cân bằng cực đoan giữa số vị trí nền và số vị trí chứa vật
+thể. Focal Loss~\cite{lin2017focal} giải quyết bằng cách giảm trọng số đóng góp của các mẫu dễ:
+\begin{equation}
+\label{eq:focal}
+\mathcal{L}_{\text{focal}}(p_t) = -\alpha_t \left(1 - p_t\right)^{\gamma} \log(p_t),
+\end{equation}
+trong đó $p_t$ là xác suất mô hình gán cho lớp đúng và $\gamma$ điều khiển mức độ giảm trọng số.
+
+\subsection{Đa tỉ lệ và vật thể nhỏ}
+\label{sec:vat_the_nho}
+
+Một biển báo cách xe 50 mét và một biển báo cách 5 mét có kích thước trên ảnh chênh nhau hàng chục
+lần. Mạng kim tự tháp đặc trưng (FPN)~\cite{lin2017fpn} xử lý điều này bằng cách kết hợp đặc trưng
+ở nhiều tầng phân giải: tầng nông giữ chi tiết không gian tốt cho vật thể nhỏ, tầng sâu giàu ngữ
+nghĩa hơn cho vật thể lớn.
+
+Dù vậy, vật thể nhỏ vẫn là điểm yếu dai dẳng~\cite{tong2020smallobject}. Nguyên nhân nằm ở bước
+sải: đầu dự đoán P3 hoạt động ở bước sải 8, nghĩa là một vật thể 16 điểm ảnh chỉ trải trên hai ô
+lưới. Tín hiệu mà một vật thể nhỏ để lại trên bản đồ đặc trưng vốn đã yếu, nên nó là thành phần
+\emph{mong manh nhất} của toàn bộ hệ thống --- và cũng là thành phần đầu tiên bị tổn hại khi ta can
+thiệp vào mô hình bằng các phép nén. Đây chính là lý do lý thuyết khiến đề tài đo $AP$ tách theo
+nhóm kích thước thay vì chỉ đọc mAP tổng.
+
+\subsection{Hàm mất mát của họ YOLO hiện đại}
+
+Các phiên bản YOLO hiện đại~\cite{jocher2023ultralytics} là bộ phát hiện không dùng hộp neo. Hàm
+mất mát tổng gồm ba thành phần:
+\begin{equation}
+\label{eq:yololoss}
+\mathcal{L} = \lambda_{\text{box}} \mathcal{L}_{\text{CIoU}}
+            + \lambda_{\text{cls}} \mathcal{L}_{\text{BCE}}
+            + \lambda_{\text{dfl}} \mathcal{L}_{\text{DFL}}.
+\end{equation}
+
+Thành phần thứ nhất dùng CIoU~\cite{zheng2020diou}, một mở rộng của IoU có tính thêm khoảng cách
+giữa hai tâm hộp và độ lệch tỉ lệ khung, nhờ đó vẫn cung cấp gradient hữu ích ngay cả khi hai hộp
+chưa giao nhau --- trường hợp mà IoU thuần tuý cho gradient bằng không. Thành phần thứ ba là
+Distribution Focal Loss~\cite{li2020gfl}, coi mỗi cạnh hộp bao là một phân phối rời rạc thay vì một
+giá trị điểm, giúp việc hồi quy biên ổn định hơn khi ranh giới vật thể mờ.
+
+Khi bật chưng cất tri thức, một thành phần thứ tư được cộng thêm vào biểu
+thức~\eqref{eq:yololoss} --- chi tiết ở Mục~\ref{sec:kd_lythuyet}.
+
+Sau khi suy luận, bước hậu xử lý NMS loại bỏ các hộp trùng cho cùng một vật thể: các hộp được sắp
+theo điểm tin cậy giảm dần, hộp có điểm cao nhất được giữ lại và mọi hộp còn lại có IoU với nó vượt
+ngưỡng sẽ bị loại.
+
+\section{Hệ thống độ đo}
+
+\subsection{IoU, Precision và Recall}
+
+Độ đo nền tảng là tỉ số giao trên hợp giữa hộp dự đoán $B_p$ và hộp thật $B_g$:
+\begin{equation}
+\label{eq:iou}
+\text{IoU}(B_p, B_g) = \frac{|B_p \cap B_g|}{|B_p \cup B_g|} .
+\end{equation}
+Một dự đoán được tính là dương tính đúng khi lớp khớp và IoU vượt ngưỡng cho trước. Từ đó suy ra
+\begin{equation}
+\label{eq:pr}
+\text{Precision} = \frac{TP}{TP + FP}, \qquad
+\text{Recall} = \frac{TP}{TP + FN}.
+\end{equation}
+
+\subsection{mAP}
+
+Sắp toàn bộ dự đoán theo điểm tin cậy giảm dần và tính cặp $(\text{Precision}, \text{Recall})$ tại
+từng ngưỡng cho ta đường cong PR. Độ chính xác trung bình $AP$ là diện tích dưới đường cong này, và
+$mAP$ là trung bình của $AP$ trên toàn bộ các lớp. Cách định nghĩa này kế thừa từ bộ chuẩn PASCAL
+VOC~\cite{everingham2010pascalvoc} và được COCO~\cite{lin2014coco} mở rộng thêm chiều ngưỡng IoU:
+\begin{equation}
+\label{eq:map}
+AP = \int_{0}^{1} p(r)\, dr, \qquad
+mAP = \frac{1}{K} \sum_{k=1}^{K} AP_k .
+\end{equation}
+Quy ước COCO báo cáo hai biến thể: mAP@0,5 tính tại một ngưỡng IoU duy nhất là 0,5, và
+mAP@0,5:0,95 lấy trung bình trên mười ngưỡng từ 0,5 đến 0,95 với bước 0,05. Biến thể thứ hai khắt
+khe hơn nhiều vì nó đòi hỏi hộp bao phải khít, chứ không chỉ chồng lấn ở mức tối thiểu.
+
+Một hệ quả quan trọng của việc mAP là độ đo \emph{xếp hạng}: khi tính mAP, không được lọc dự đoán
+theo ngưỡng tin cậy trước, vì làm vậy sẽ cắt mất phần đuôi của đường cong PR và bóp méo kết quả.
+Ngưỡng tin cậy chỉ nên áp dụng ở khâu hiển thị.
+
+\subsection{$AP$ tách theo nhóm kích thước}
+\label{sec:ap_theo_kichthuoc}
+
+Đây là công cụ trung tâm của đề tài, nên cần nói rõ vì sao nó cần thiết.
+
+Biểu thức~\eqref{eq:map} lấy trung bình trên các lớp nhưng \emph{không} phân biệt kích thước vật
+thể. Nếu tập đánh giá có nhiều vật thể lớn --- vốn dễ phát hiện --- thì $AP$ cao trên nhóm này sẽ
+kéo mAP tổng lên và che lấp một suy giảm nghiêm trọng ở nhóm nhỏ. Hiện tượng pha loãng này càng
+nặng khi phân bố kích thước lệch, đúng như trường hợp bộ dữ liệu được dùng ở đây (xem
+Mục~\ref{sec:thanhphan}).
+
+Bộ đánh giá COCO~\cite{lin2014coco} khắc phục bằng cách tính $AP$ riêng cho ba nhóm dựa trên diện
+tích tuyệt đối của hộp bao:
+\begin{equation}
+\label{eq:apsize}
+AP_{\text{nhỏ}}: a < 32^2, \qquad
+AP_{\text{trung bình}}: 32^2 \le a < 96^2, \qquad
+AP_{\text{lớn}}: a \ge 96^2,
+\end{equation}
+với $a$ tính bằng điểm ảnh vuông. Ba chỉ số này cho phép trả lời câu hỏi mà mAP tổng không trả lời
+được: khi một phép can thiệp làm mô hình kém đi, \emph{phần kém đó rơi vào nhóm nào}. Với bài toán
+biển báo giao thông, câu trả lời có ý nghĩa an toàn trực tiếp, vì biển ở xa --- tức vật thể nhỏ ---
+mới là thứ quyết định thời gian phản ứng của xe.
+
+\subsection{Độ đo chi phí triển khai}
+
+Ba đại lượng bổ sung được dùng để phản ánh ràng buộc thực tế: độ trễ suy luận tính bằng mili-giây
+cho mỗi ảnh, tốc độ khung hình bằng nghịch đảo của độ trễ, và dung lượng mô hình tính bằng
+megabyte. Ngoài giá trị trung vị, đề tài còn báo cáo phân vị 95\% của độ trễ, vì với hệ thống thời
+gian thực thì trường hợp xấu nhất mới là ràng buộc thật chứ không phải trường hợp trung bình.
+
+Cả ba đại lượng đều phụ thuộc phần cứng nên phải luôn báo cáo kèm thiết bị đo. Ngoài ra, do GPU
+thực thi bất đồng bộ, phép đo thời gian phải có bước đồng bộ hoá tường minh và một giai đoạn khởi
+động trước khi bấm giờ, nếu không sẽ ghi nhận sai thời gian tính toán thực.
+
+\section{Nén mô hình}
+
+\subsection{Chưng cất tri thức}
+\label{sec:kd_lythuyet}
+
+Chưng cất tri thức~\cite{hinton2015distillation} huấn luyện một mô hình học trò nhỏ bắt chước phân
+phối đầu ra mềm của một mô hình thầy lớn hơn. Hàm mất mát kết hợp
+\begin{equation}
+\label{eq:distill}
+\mathcal{L} = (1-\alpha)\,\mathcal{L}_{\text{cứng}}
+            + \alpha\, T^{2}\, \mathcal{L}_{\text{KL}}\!\left(\sigma(z_s/T) \,\|\, \sigma(z_t/T)\right),
+\end{equation}
+với $T$ là nhiệt độ làm mềm phân phối và $z_s, z_t$ là logit của học trò và thầy.
+
+Trong bối cảnh phát hiện đối tượng, việc áp dụng chưng cất phức tạp hơn phân lớp ảnh vì đầu ra gồm
+cả thành phần hồi quy hộp bao lẫn thành phần phân loại, và vì mất cân bằng nền--vật thể rất lớn.
+Các công trình chuyên biệt đã đề xuất chưng cất trên đặc trưng trung gian thay vì chỉ trên
+logit~\cite{chen2017kddetection,li2017mimicking}; một khảo sát tổng quan về các biến thể có thể tìm
+thấy trong~\cite{gou2021kdsurvey}.
+
+Giả thuyết nền là phân phối mềm của thầy mang cái thường được gọi là ``tri thức tối'': thông tin về
+\emph{quan hệ} giữa các lớp mà nhãn cứng không có. Chẳng hạn khi nhìn một biển ``Speed Limit 30'',
+thầy có thể gán xác suất thứ hai cho ``Speed Limit 80'' --- hàm ý rằng hai lớp này dễ nhầm --- trong
+khi nhãn cứng chỉ nói lớp đúng là gì.
+
+Tuy nhiên lợi ích này \emph{không được bảo đảm}, và điều kiện áp dụng thường bị bỏ qua trong các
+trình bày phổ thông. Khi khoảng cách năng lực giữa thầy và trò quá nhỏ, lượng tri thức tối có thể
+truyền đạt là rất ít, trong khi chi phí nhiễu do bắt chước một phân phối không hoàn hảo vẫn phải
+trả đủ. Khi bản thân thầy chưa đủ tốt, học trò đang bắt chước một tín hiệu sai. Và khi trọng số
+$\alpha$ quá lớn, thành phần bắt chước có thể lấn át tín hiệu từ nhãn cứng. Đề tài này quan sát
+được đúng một tình huống như vậy, trình bày ở Chương~\ref{ch:ket_qua}.
+
+Trong bối cảnh phát hiện đối tượng, thành phần chưng cất được cộng thêm vào hàm mất mát tổng ở
+biểu thức~\eqref{eq:yololoss} và xuất hiện trong nhật ký huấn luyện dưới dạng một cột riêng --- chi
+tiết này về sau trở thành bằng chứng để xác minh cơ chế đã thực sự được kích hoạt.
+
+\subsection{Lượng tử hoá}
+\label{sec:quant_lythuyet}
+
+Lượng tử hoá thay biểu diễn dấu phẩy động 32 bit bằng biểu diễn có độ rộng bit nhỏ hơn. Phép ánh xạ
+affine sang số nguyên 8 bit~\cite{jacob2018quantization} có dạng
+\begin{equation}
+\label{eq:quant}
+r \approx S\,(q - Z),
+\end{equation}
+trong đó $r$ là giá trị thực, $q$ là giá trị nguyên, $S$ là hệ số tỉ lệ và $Z$ là điểm không. Các
+tham số $S$ và $Z$ được xác định ở bước \emph{hiệu chuẩn}: chạy mô hình trên một tập ảnh đại diện để
+quan sát dải giá trị thực tế của các kích hoạt. Việc chọn dải này ảnh hưởng đáng kể tới chất lượng
+mô hình sau lượng tử hoá, và các hướng dẫn thực hành chi tiết có thể tìm thấy
+trong~\cite{krishnamoorthi2018quantizing,nagel2021quantwhitepaper}; một khảo sát tổng quan về các
+phương pháp lượng tử hoá được trình bày trong~\cite{gholami2022quantsurvey}.
+
+Lượng tử hoá sau huấn luyện hấp dẫn vì không cần huấn luyện lại. Cái giá là sai số lượng tử hoá:
+mỗi giá trị thực bị làm tròn về mức gần nhất trong 256 mức khả dĩ. Ở mức FP16, việc giảm độ rộng
+bit gần như không ảnh hưởng tới chất lượng mô hình trong nhiều tác
+vụ~\cite{micikevicius2018mixedprecision}. Ở mức INT8, mức nén mạnh hơn nhiều nhưng sai số cũng lớn
+hơn hẳn.
+
+Có một dự đoán lý thuyết đáng chú ý ở đây, và nó được kiểm chứng ở Chương~\ref{ch:ket_qua}: vì sai
+số lượng tử hoá tác động lên toàn bộ bản đồ đặc trưng, còn vật thể nhỏ vốn chỉ để lại tín hiệu yếu
+trên bản đồ đó (Mục~\ref{sec:vat_the_nho}), \emph{tỉ lệ tín hiệu trên nhiễu của vật thể nhỏ suy
+giảm nhiều hơn của vật thể lớn}. Nói cách khác, chi phí của lượng tử hoá được dự đoán là phân bố
+\emph{không đều} theo kích thước vật thể --- và đó chính là thứ mAP tổng không thể hiện được.
+
+Ngoài ra, lợi ích về tốc độ của INT8 không tự động: nó chỉ hiện thực hoá khi môi trường thực thi có
+nhân tính toán số nguyên được tối ưu cho phần cứng đích. Nếu không, thời gian tiết kiệm được có thể
+bị tiêu hết vào các phép chuyển đổi lượng tử hoá và giải lượng tử hoá xen giữa các lớp.
+
+\section{Công trình liên quan về biển báo giao thông}
+
+GTSRB~\cite{stallkamp2012gtsrb} là bộ chuẩn kinh điển cho \emph{nhận dạng} biển báo, gồm các ảnh đã
+cắt sát quanh từng biển; đây là bài toán phân lớp chứ không phải phát hiện.
+GTSDB~\cite{houben2013gtsdb} bổ sung phần \emph{phát hiện} với ảnh đường phố đầy đủ.
+TT100K~\cite{zhu2016tt100k} mở rộng quy mô sang bối cảnh Trung Quốc với ảnh toàn cảnh độ phân giải
+cao, còn Mapillary Traffic Sign~\cite{ertler2020mapillary} cung cấp dữ liệu đa quốc gia thu từ
+camera hành trình.
+
+Phân biệt giữa bộ dữ liệu kiểu nhận dạng và bộ dữ liệu kiểu phát hiện có ý nghĩa trực tiếp với đề
+tài này: như sẽ trình bày ở Mục~\ref{sec:thanhphan}, bộ dữ liệu được dùng là một tập trộn chứa cả
+hai kiểu, và chính điều đó chi phối phân bố kích thước vật thể --- yếu tố quyết định cách đọc mọi
+chỉ số về sau. Hiện tượng bộ dữ liệu mang thiên lệch đặc thù và mô hình học phải thiên lệch đó thay
+vì học đặc trưng tổng quát đã được chỉ ra từ lâu~\cite{torralba2011bias}, còn việc chỉ số trên tập
+kiểm tra không chuyển được sang dữ liệu mới cũng đã được ghi nhận trên các bộ chuẩn
+lớn~\cite{recht2019imagenetv2}. Riêng vấn đề trùng lặp gần giữa các tập, vốn làm chỉ số bị thổi
+phồng một cách âm thầm, đã được khảo sát kỹ trên nhiều bộ chuẩn phổ biến~\cite{barz2020duplicates}.

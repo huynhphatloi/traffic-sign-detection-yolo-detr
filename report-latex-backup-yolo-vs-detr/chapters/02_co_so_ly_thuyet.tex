@@ -1,0 +1,225 @@
+\chapter{CƠ SỞ LÝ THUYẾT VÀ CÔNG TRÌNH LIÊN QUAN}
+\label{ch:co_so}
+
+\section{Bài toán phát hiện đối tượng}
+
+\subsection{Phát biểu bài toán}
+
+Cho một ảnh $I \in \mathbb{R}^{H \times W \times 3}$, bài toán phát hiện đối tượng yêu cầu sinh ra
+một tập hợp
+\begin{equation}
+\label{eq:phatbieu}
+\mathcal{D} = \{(c_i, b_i, s_i)\}_{i=1}^{N},
+\end{equation}
+trong đó $c_i \in \{1,\dots,K\}$ là nhãn lớp, $b_i = (x_i, y_i, w_i, h_i)$ là hộp bao và
+$s_i \in [0,1]$ là điểm tin cậy. Số lượng vật thể $N$ không biết trước và thay đổi theo từng ảnh
+--- đây chính là điểm khiến bài toán khó hơn phân lớp ảnh, nơi đầu ra luôn là một véc-tơ có kích
+thước cố định.
+
+Sự khác biệt về bản chất này dẫn tới hai chiến lược thiết kế. Chiến lược thứ nhất là biến bài toán
+số lượng thay đổi thành bài toán số lượng cố định bằng cách rải dày các vị trí ứng viên trên ảnh
+--- đó là con đường của các bộ phát hiện dựa trên hộp neo và lưới. Chiến lược thứ hai là giữ
+nguyên bản chất tập hợp và học một phép gán --- đó là con đường của DETR.
+
+\subsection{Định dạng chú thích}
+
+Ba định dạng chú thích phổ biến được dùng trong đề tài này. Định dạng YOLO lưu mỗi vật thể trên
+một dòng văn bản gồm \texttt{class\_id}, tâm hộp $(x_c, y_c)$ và kích thước $(w, h)$, tất cả đã
+chuẩn hoá về đoạn $[0,1]$ theo kích thước ảnh. Định dạng COCO~\cite{lin2014coco} dùng một tệp JSON
+duy nhất chứa ba khối \texttt{images}, \texttt{annotations} và \texttt{categories}, với hộp bao
+lưu theo góc trên trái và kích thước tuyệt đối tính bằng điểm ảnh. Định dạng PASCAL
+VOC~\cite{everingham2010pascalvoc} dùng tệp XML riêng cho mỗi ảnh.
+
+Phép chuyển từ YOLO sang COCO là một bước bắt buộc trong đề tài vì nhánh DETR làm việc theo lược
+đồ COCO. Công thức chuyển đổi:
+\begin{align}
+\label{eq:yolo2coco}
+x_{\text{trái}} &= \left(x_c - \tfrac{w}{2}\right) \cdot W_{\text{ảnh}}, &
+y_{\text{trên}} &= \left(y_c - \tfrac{h}{2}\right) \cdot H_{\text{ảnh}}, \\
+w_{\text{tuyệt đối}} &= w \cdot W_{\text{ảnh}}, &
+h_{\text{tuyệt đối}} &= h \cdot H_{\text{ảnh}}. \nonumber
+\end{align}
+Trường \texttt{area} bằng tích $w_{\text{tuyệt đối}} \cdot h_{\text{tuyệt đối}}$ và được bộ đánh
+giá COCO dùng để phân nhóm vật thể thành nhỏ, trung bình và lớn khi tính mAP theo kích thước.
+
+\section{Họ kiến trúc một giai đoạn}
+
+\subsection{Nguyên lý chung}
+
+Bộ phát hiện một giai đoạn bỏ hẳn bước đề xuất vùng. Ảnh đi qua một mạng xương sống tích chập để
+sinh bản đồ đặc trưng, sau đó một đầu dự đoán gắn trực tiếp lên bản đồ đó sẽ xuất ra hộp bao và
+điểm phân lớp cho từng vị trí. Vì toàn bộ quá trình chỉ cần một lượt truyền xuôi, tốc độ suy luận
+cao hơn đáng kể so với dòng hai giai đoạn~\cite{redmon2016yolo}.
+
+Điểm yếu cố hữu của cách làm này là mất cân bằng cực đoan giữa số vị trí nền và số vị trí chứa vật
+thể. Focal Loss~\cite{lin2017focal} giải quyết bằng cách giảm trọng số đóng góp của các mẫu dễ:
+\begin{equation}
+\label{eq:focal}
+\mathcal{L}_{\text{focal}}(p_t) = -\alpha_t \left(1 - p_t\right)^{\gamma} \log(p_t),
+\end{equation}
+trong đó $p_t$ là xác suất mô hình gán cho lớp đúng và $\gamma$ điều khiển mức độ giảm trọng số.
+
+\subsection{Đa tỉ lệ và vật thể nhỏ}
+
+Một biển báo cách xe 50 mét và một biển báo cách 5 mét có kích thước trên ảnh chênh nhau hàng chục
+lần. Mạng kim tự tháp đặc trưng (FPN)~\cite{lin2017fpn} xử lý điều này bằng cách kết hợp đặc trưng
+ở nhiều tầng phân giải: tầng nông giữ chi tiết không gian tốt cho vật thể nhỏ, tầng sâu giàu ngữ
+nghĩa hơn cho vật thể lớn.
+
+Dù vậy, vật thể nhỏ vẫn là điểm yếu dai dẳng~\cite{tong2020smallobject}. Nguyên nhân nằm ở bước
+sải: đầu dự đoán P3 của YOLOv8 hoạt động ở bước sải 8, nghĩa là một vật thể 16 điểm ảnh chỉ trải
+trên hai ô lưới. Khi ảnh đầu vào bị thu nhỏ để khớp kích thước huấn luyện, tình hình còn xấu hơn.
+Đây là lý do vì sao chỉ số $AP$ tách riêng cho nhóm vật thể nhỏ có giá trị chẩn đoán cao hơn hẳn
+mAP tổng, như sẽ thấy ở Chương~\ref{ch:ket_qua}.
+
+\subsection{YOLOv8 và các hàm mất mát}
+
+YOLOv8~\cite{jocher2023ultralytics} là một bộ phát hiện không dùng hộp neo. Hàm mất mát tổng gồm
+ba thành phần:
+\begin{equation}
+\label{eq:yololoss}
+\mathcal{L} = \lambda_{\text{box}} \mathcal{L}_{\text{CIoU}}
+            + \lambda_{\text{cls}} \mathcal{L}_{\text{BCE}}
+            + \lambda_{\text{dfl}} \mathcal{L}_{\text{DFL}}.
+\end{equation}
+
+Thành phần thứ nhất dùng CIoU~\cite{zheng2020diou}, một mở rộng của IoU có tính thêm khoảng cách
+giữa hai tâm hộp và độ lệch tỉ lệ khung, nhờ đó vẫn cung cấp gradient hữu ích ngay cả khi hai hộp
+chưa giao nhau --- trường hợp mà IoU thuần tuý cho gradient bằng không. Thành phần thứ ba là
+Distribution Focal Loss~\cite{li2020gfl}, coi mỗi cạnh hộp bao là một phân phối rời rạc thay vì
+một giá trị điểm, giúp việc hồi quy biên ổn định hơn khi ranh giới vật thể mờ.
+
+Sau khi suy luận, bước hậu xử lý NMS loại bỏ các hộp trùng cho cùng một vật thể: các hộp được sắp
+theo điểm tin cậy giảm dần, hộp có điểm cao nhất được giữ lại và mọi hộp còn lại có IoU với nó
+vượt ngưỡng sẽ bị loại.
+
+\section{Họ kiến trúc transformer}
+
+\subsection{Cơ chế chú ý}
+
+Transformer~\cite{vaswani2017attention} thay thế phép tích chập cục bộ bằng cơ chế chú ý cho phép
+mọi vị trí tương tác trực tiếp với mọi vị trí khác:
+\begin{equation}
+\label{eq:attention}
+\text{Attention}(Q, K, V) = \text{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right) V .
+\end{equation}
+Hệ số $\sqrt{d_k}$ giữ cho phương sai của tích vô hướng không tăng theo số chiều, tránh đẩy hàm
+softmax vào vùng bão hoà. Vision Transformer~\cite{dosovitskiy2021vit} chứng minh kiến trúc này áp
+dụng được cho ảnh, nhưng cũng cho thấy nó cần lượng dữ liệu lớn hơn hẳn CNN --- một quan sát rất
+quan trọng đối với đề tài này, vì nó dự báo trước điều gì sẽ xảy ra khi huấn luyện DETR trên bộ dữ
+liệu chỉ 6.012 hộp bao.
+
+Lý do của hiện tượng đó là \emph{thiên kiến quy nạp}. Mạng tích chập được cài sẵn giả định về tính
+địa phương và bất biến tịnh tiến; transformer không có những giả định này và phải học chúng từ dữ
+liệu. Khi dữ liệu dồi dào, việc không bị ràng buộc là lợi thế; khi dữ liệu khan hiếm, đó là bất
+lợi.
+
+\subsection{DETR: dự đoán theo tập hợp}
+
+DETR~\cite{carion2020detr} đưa ra ba thay đổi so với các bộ phát hiện truyền thống. Thứ nhất, mô
+hình dùng một tập cố định gồm 100 truy vấn đối tượng học được, mỗi truy vấn đề xuất tối đa một vật
+thể. Thứ hai, việc ghép cặp giữa dự đoán và nhãn thật được giải bằng thuật toán
+Hungarian~\cite{kuhn1955hungarian} với chi phí ghép cặp
+\begin{equation}
+\label{eq:hungarian}
+\mathcal{L}_{\text{ghép}} = -\mathbb{1}_{\{c_i \neq \varnothing\}} \hat{p}_{\sigma(i)}(c_i)
+  + \mathbb{1}_{\{c_i \neq \varnothing\}} \mathcal{L}_{\text{box}}(b_i, \hat{b}_{\sigma(i)}),
+\end{equation}
+trong đó $\mathcal{L}_{\text{box}}$ kết hợp khoảng cách $L_1$ và GIoU. Thứ ba, vì phép ghép là
+song ánh nên mỗi nhãn thật khớp đúng một dự đoán, do đó mô hình không sinh hộp trùng và
+\emph{không cần NMS}.
+
+Cái giá của thiết kế này là tốc độ hội tụ. Bản gốc cần khoảng 300 đến 500 chu kỳ trên COCO. Nguyên
+nhân được cho là phép gán Hungarian thay đổi mạnh giữa các bước đầu huấn luyện, khiến tín hiệu
+giám sát không ổn định. Deformable DETR~\cite{zhu2021deformabledetr} khắc phục bằng cơ chế chú ý
+chỉ lấy mẫu một số ít điểm tham chiếu, giảm số chu kỳ cần thiết xuống khoảng một phần mười. Gần
+đây hơn, RT-DETR~\cite{zhao2024rtdetr} cho thấy dòng transformer có thể đạt tốc độ thời gian thực
+và vượt YOLO ở cùng ngân sách --- nhưng vẫn với điều kiện được huấn luyện đầy đủ.
+
+\section{Hệ thống độ đo}
+
+\subsection{IoU, Precision và Recall}
+
+Độ đo nền tảng là tỉ số giao trên hợp giữa hộp dự đoán $B_p$ và hộp thật $B_g$:
+\begin{equation}
+\label{eq:iou}
+\text{IoU}(B_p, B_g) = \frac{|B_p \cap B_g|}{|B_p \cup B_g|} .
+\end{equation}
+Một dự đoán được tính là dương tính đúng khi lớp khớp và IoU vượt ngưỡng cho trước. Từ đó suy ra
+\begin{equation}
+\label{eq:pr}
+\text{Precision} = \frac{TP}{TP + FP}, \qquad
+\text{Recall} = \frac{TP}{TP + FN}.
+\end{equation}
+
+\subsection{mAP}
+
+Sắp toàn bộ dự đoán theo điểm tin cậy giảm dần và tính cặp $(\text{Precision}, \text{Recall})$ tại
+từng ngưỡng cho ta đường cong PR. Độ chính xác trung bình $AP$ là diện tích dưới đường cong này,
+và $mAP$ là trung bình của $AP$ trên toàn bộ các lớp:
+\begin{equation}
+\label{eq:map}
+AP = \int_{0}^{1} p(r)\, dr, \qquad
+mAP = \frac{1}{K} \sum_{k=1}^{K} AP_k .
+\end{equation}
+Quy ước COCO báo cáo hai biến thể: mAP@0,5 tính tại một ngưỡng IoU duy nhất là 0,5, và mAP@0,5:0,95
+lấy trung bình trên mười ngưỡng từ 0,5 đến 0,95 với bước 0,05. Biến thể thứ hai khắt khe hơn nhiều
+vì nó đòi hỏi hộp bao phải khít, chứ không chỉ chồng lấn ở mức tối thiểu.
+
+Một hệ quả quan trọng của việc mAP là độ đo \emph{xếp hạng}: khi tính mAP, không được lọc dự đoán
+theo ngưỡng tin cậy trước, vì làm vậy sẽ cắt mất phần đuôi của đường cong PR và bóp méo kết quả.
+Ngưỡng tin cậy chỉ nên áp dụng ở khâu hiển thị.
+
+\subsection{Độ đo chi phí triển khai}
+
+Ba đại lượng bổ sung được dùng để phản ánh ràng buộc thực tế: độ trễ suy luận tính bằng
+mili-giây cho mỗi ảnh, tốc độ khung hình bằng nghịch đảo của độ trễ, và dung lượng mô hình tính
+bằng megabyte. Cả ba đều phụ thuộc phần cứng nên phải luôn báo cáo kèm thiết bị đo. Ngoài ra, do
+GPU thực thi bất đồng bộ, phép đo thời gian phải có bước đồng bộ hoá tường minh, nếu không sẽ ghi
+nhận thiếu thời gian tính toán thực.
+
+\section{Nén mô hình}
+
+\subsection{Lượng tử hoá}
+
+Lượng tử hoá thay biểu diễn dấu phẩy động 32 bit bằng biểu diễn có độ rộng bit nhỏ hơn. Phép ánh
+xạ affine sang số nguyên 8 bit~\cite{jacob2018quantization} có dạng
+\begin{equation}
+\label{eq:quant}
+r \approx S\,(q - Z),
+\end{equation}
+trong đó $r$ là giá trị thực, $q$ là giá trị nguyên, $S$ là hệ số tỉ lệ và $Z$ là điểm không. Ở
+mức FP16, việc giảm độ rộng bit gần như không ảnh hưởng tới chất lượng mô hình trong nhiều tác
+vụ~\cite{micikevicius2018mixedprecision}, trong khi INT8 nén mạnh hơn nhưng có thể mất độ chính
+xác và --- điều thường bị bỏ qua --- chỉ thực sự nhanh hơn nếu môi trường thực thi có nhân tính
+toán số nguyên được tối ưu.
+
+\subsection{Chưng cất tri thức}
+
+Chưng cất tri thức~\cite{hinton2015distillation} huấn luyện một mô hình học trò nhỏ bắt chước
+phân phối đầu ra mềm của một mô hình thầy lớn hơn. Hàm mất mát kết hợp
+\begin{equation}
+\label{eq:distill}
+\mathcal{L} = (1-\alpha)\,\mathcal{L}_{\text{cứng}}
+            + \alpha\, T^{2}\, \mathcal{L}_{\text{KL}}\!\left(\sigma(z_s/T) \,\|\, \sigma(z_t/T)\right),
+\end{equation}
+với $T$ là nhiệt độ làm mềm phân phối và $z_s, z_t$ là logit của học trò và thầy. Giả thuyết nền
+là phân phối mềm của thầy mang thông tin về quan hệ giữa các lớp mà nhãn cứng không có. Tuy nhiên
+lợi ích này không được bảo đảm: khi khoảng cách năng lực giữa thầy và trò quá nhỏ, hoặc khi bản
+thân thầy chưa đủ tốt, tín hiệu chưng cất có thể trở thành nhiễu.
+
+\section{Công trình liên quan về biển báo giao thông}
+
+GTSRB~\cite{stallkamp2012gtsrb} là bộ chuẩn kinh điển cho \emph{nhận dạng} biển báo, gồm các ảnh
+đã cắt sát quanh từng biển; đây là bài toán phân lớp chứ không phải phát hiện.
+GTSDB~\cite{houben2013gtsdb} bổ sung phần \emph{phát hiện} với ảnh đường phố đầy đủ.
+TT100K~\cite{zhu2016tt100k} mở rộng quy mô sang bối cảnh Trung Quốc với ảnh toàn cảnh độ phân giải
+cao, còn Mapillary Traffic Sign~\cite{ertler2020mapillary} cung cấp dữ liệu đa quốc gia thu từ
+camera hành trình.
+
+Phân biệt giữa bộ dữ liệu kiểu nhận dạng và bộ dữ liệu kiểu phát hiện có ý nghĩa trực tiếp với đề
+tài này: như sẽ trình bày ở Mục~\ref{sec:thanhphan}, bộ dữ liệu được dùng là một tập trộn chứa cả
+hai kiểu, và chính điều đó chi phối cách diễn giải kết quả. Hiện tượng bộ dữ liệu mang thiên lệch
+đặc thù và mô hình học phải thiên lệch đó thay vì học đặc trưng tổng quát đã được chỉ ra từ
+lâu~\cite{torralba2011bias}, còn việc chỉ số trên tập kiểm tra không chuyển được sang dữ liệu mới
+cũng đã được ghi nhận trên các bộ chuẩn lớn~\cite{recht2019imagenetv2}.

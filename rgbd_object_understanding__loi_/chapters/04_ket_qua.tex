@@ -1,0 +1,746 @@
+\chapter{KẾT QUẢ VÀ BÀN LUẬN}
+\label{ch:ket_qua}
+
+\section{Kết quả tổng quan}
+
+Bảng~\ref{tab:tong_quan} tổng hợp kết quả của toàn bộ sáu thí nghiệm. Tất cả được sinh ra từ
+đúng một tệp trọng số đã nêu ở Bảng~\ref{tab:thiet_lap}, không dùng mô hình dự phòng.
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp kết quả theo từng thành phần của hệ thống}
+\label{tab:tong_quan}
+\small
+\begin{tabularx}{\textwidth}{l X l}
+\toprule
+\textbf{Thành phần} & \textbf{Kết quả đo được} & \textbf{Đánh giá} \\
+\midrule
+Phân vùng
+  & mAP50 $0{,}970$ · mAP50--95 $0{,}778$ (312 ảnh)
+  & Mạnh \\
+Đếm đối tượng
+  & MAE $0{,}695 \rightarrow 0{,}590$ · đúng tuyệt đối $60\% \rightarrow 68\%$
+  & Độ sâu có ích \\
+Nhận diện (mặt nạ đã khớp)
+  & top-1 $42{,}74\%$ · top-3 $71{,}45\%$ · từ chối $31{,}79\%$
+  & Trung bình \\
+Nhận diện (đầu-cuối)
+  & khớp mặt nạ $30{,}82\%$ · top-1 $13{,}17\%$
+  & Điểm nghẽn \\
+Đo \& hiệu chỉnh
+  & MAE $10{,}143 \rightarrow 12{,}598$~cm ($-24{,}2\%$)
+  & \textbf{Kết quả âm} \\
+Kiểm soát tỉ lệ
+  & khôi phục sai lệch bơm vào trong $\approx 5\%$
+  & Đạt \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\hopnhanmanh{Phát hiện quan trọng nhất của đề tài là một kết quả \emph{âm tính}: cơ chế hiệu
+chỉnh tỉ lệ vượt qua thí nghiệm kiểm soát độ nhạy nhưng vẫn làm sai số đo tăng $24{,}2\%$ trên
+dữ liệu giữ lại. Điều này cho thấy việc đạt bài kiểm soát là điều kiện \emph{cần} chứ không phải
+điều kiện \emph{đủ} để kết luận một phép hiệu chỉnh có ích.}
+
+\section{Kết quả phân vùng instance}
+
+\subsection{Chỉ số định lượng}
+
+Bảng~\ref{tab:phan_vung} trình bày kết quả phân vùng trên tập kiểm thử OCID gồm 26 chuỗi và 312
+khung hình, chia theo cảnh để tránh rò rỉ khung hình liền kề.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả phân vùng class-agnostic trên tập kiểm thử OCID}
+\label{tab:phan_vung}
+\small
+\begin{tabular}{lrl}
+\toprule
+\textbf{Chỉ số} & \textbf{Giá trị} & \textbf{Diễn giải} \\
+\midrule
+mask mAP50      & $0{,}9697$ & định vị vật gần như hoàn hảo \\
+mask mAP75      & $0{,}9062$ & vẫn tốt ở ngưỡng chặt hơn \\
+mask mAP50--95  & $0{,}7778$ & biên mặt nạ ở mức chi tiết cao còn lệch \\
+Độ chính xác    & $0{,}9800$ & rất ít mặt nạ giả \\
+Độ bao phủ      & $0{,}9346$ & bỏ sót một số vật nhỏ hoặc bị che nặng \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Chênh lệch giữa mAP50 ($0{,}9697$) và mAP50--95 ($0{,}7778$) cho biết mô hình xác định vị trí vật
+gần như hoàn hảo nhưng ranh giới mặt nạ ở mức chi tiết cao vẫn còn lệch. Điều này hợp lý với bản
+chất dữ liệu: nhãn instance của OCID được sinh bán tự động \cite{suchi2019ocid} nên biên mặt nạ
+tự nó cũng có sai số vài điểm ảnh.
+
+Độ chính xác cao hơn độ bao phủ ($0{,}9800$ so với $0{,}9346$) cho thấy mô hình thiên về thận
+trọng --- bỏ sót một số vật nhỏ hoặc bị che nặng hơn là tạo ra mặt nạ giả. Với ứng dụng robot
+thao tác, đây là đánh đổi đúng hướng: một mặt nạ giả khiến robot gắp vào chỗ trống, còn một vật
+bị bỏ sót chỉ đơn giản là không được xử lý ở lượt này.
+
+\subsection{Đường cong độ chính xác--độ bao phủ}
+
+Hình~\ref{fig:seg_curves} trình bày các đường cong đánh giá sinh tự động trong quá trình kiểm
+thử.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/seg_pr_curve.png}
+  \caption{Đường cong độ chính xác--độ bao phủ}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/seg_f1_curve.png}
+  \caption{Điểm $F_1$ theo ngưỡng tin cậy}
+\end{subfigure}
+\caption{Đường cong đánh giá mặt nạ trên tập kiểm thử OCID}
+\label{fig:seg_curves}
+\end{figure}
+
+Đường cong PR giữ độ chính xác gần như phẳng ở mức cao cho tới khi độ bao phủ vượt khoảng
+$0{,}9$, rồi mới suy giảm --- dạng đường cong lý tưởng cho thấy mô hình không phải đánh đổi
+nhiều giữa hai chỉ số trong vùng làm việc thực tế. Đường cong $F_1$ đạt cực đại ở vùng ngưỡng
+tin cậy quanh $0{,}25$--$0{,}35$, xác nhận rằng ngưỡng $0{,}25$ mà hệ thống đang dùng
+(Bảng~\ref{tab:hai_tang}) là lựa chọn hợp lý chứ không phải con số tuỳ tiện.
+
+Hình~\ref{fig:seg_pr_extra} bổ sung hai đường cong độ chính xác và độ bao phủ tách riêng theo
+ngưỡng tin cậy, giúp thấy rõ hơn cơ chế đánh đổi.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/seg_p_curve.png}
+  \caption{Độ chính xác theo ngưỡng}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/seg_r_curve.png}
+  \caption{Độ bao phủ theo ngưỡng}
+\end{subfigure}
+\caption{Độ chính xác và độ bao phủ của mặt nạ khi thay đổi ngưỡng tin cậy}
+\label{fig:seg_pr_extra}
+\end{figure}
+
+\subsection{Đánh giá định tính}
+
+Hình~\ref{fig:val_qualitative} so sánh trực tiếp nhãn thật và dự đoán trên cùng các khung hình
+kiểm thử.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/val0_labels.jpg}
+  \caption{Nhãn thật, lô 0}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/val0_pred.jpg}
+  \caption{Dự đoán, lô 0}
+\end{subfigure}
+
+\vspace{6pt}
+
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/val1_labels.jpg}
+  \caption{Nhãn thật, lô 1}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/val1_pred.jpg}
+  \caption{Dự đoán, lô 1}
+\end{subfigure}
+\caption{So sánh nhãn thật và dự đoán trên tập kiểm thử OCID}
+\label{fig:val_qualitative}
+\end{figure}
+
+Quan sát trực quan xác nhận các con số ở Bảng~\ref{tab:phan_vung}: hầu hết vật được tách đúng
+kể cả khi chồng lấn, và các trường hợp sai chủ yếu rơi vào vật rất nhỏ hoặc bị che gần hết. Đáng
+chú ý là mô hình tách được cả những vật nằm sát nhau thành các cá thể riêng biệt --- năng lực
+mà một mô hình phân vùng ngữ nghĩa thuần tuý không có.
+
+\section{Kết quả đếm đối tượng}
+
+Bảng~\ref{tab:dem} trả lời trực tiếp Câu hỏi nghiên cứu 1.1 bằng một thí nghiệm loại trừ: cùng
+một tập 200 khung hình, cùng một bộ phân vùng, chỉ khác ở chỗ tầng lọc theo độ sâu được bật hay
+tắt.
+
+\begin{table}[H]
+\centering
+\caption{Thí nghiệm loại trừ tầng lọc theo độ sâu trong bước đếm (200 khung hình)}
+\label{tab:dem}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Cấu hình} & \textbf{MAE} & \textbf{RMSE} & \textbf{Đúng tuyệt đối} & \textbf{Đếm thừa} & \textbf{Đếm thiếu} \\
+\midrule
+Chỉ dùng ảnh màu       & $0{,}695$          & $1{,}347$          & $60\%$          & $35\%$ & $5\%$ \\
+\textbf{Có lọc độ sâu} & $\mathbf{0{,}590}$ & $\mathbf{1{,}253}$ & $\mathbf{68\%}$ & $27\%$ & $5\%$ \\
+\midrule
+\textit{Thay đổi}      & $-15{,}1\%$ & $-7{,}0\%$ & $+8$ đ.\% & $-8$ đ.\% & $0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hình~\ref{fig:dem_chart} biểu diễn cùng dữ liệu dưới dạng biểu đồ cột để thấy rõ cơ chế cải
+thiện.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,
+  width=0.86\textwidth, height=6.2cm,
+  bar width=15pt,
+  ylabel={Tỉ lệ (\%)},
+  symbolic x coords={Đúng tuyệt đối, Đếm thừa, Đếm thiếu},
+  xtick=data,
+  ymin=0, ymax=78,
+  ymajorgrids=true, grid style={black!15},
+  legend style={at={(0.5,-0.16)},anchor=north,legend columns=2,draw=black!30},
+  nodes near coords, nodes near coords style={font=\scriptsize},
+  every axis plot/.append style={draw=black!70},
+  tick label style={font=\small}, label style={font=\small},
+]
+\addplot[fill=black!22] coordinates {(Đúng tuyệt đối,60) (Đếm thừa,35) (Đếm thiếu,5)};
+\addplot[fill=black!55] coordinates {(Đúng tuyệt đối,68) (Đếm thừa,27) (Đếm thiếu,5)};
+\legend{Chỉ ảnh màu, Có lọc độ sâu}
+\end{axis}
+\end{tikzpicture}
+\caption{Tác động của tầng lọc theo độ sâu: giảm đếm thừa mà không tăng đếm thiếu}
+\label{fig:dem_chart}
+\end{figure}
+
+Bổ sung tầng lọc theo độ sâu giảm MAE $15{,}1\%$ và nâng tỉ lệ đếm đúng tuyệt đối thêm 8 điểm
+phần trăm. Điều đáng chú ý nằm ở hai cột cuối: tỉ lệ đếm \emph{thừa} giảm mạnh từ $35\%$ xuống
+$27\%$ trong khi tỉ lệ đếm \emph{thiếu} giữ nguyên ở $5\%$.
+
+Kết quả này cho thấy tầng lọc theo độ sâu hoạt động đúng như thiết kế: nó loại bỏ các mặt nạ không có dữ liệu hình học hỗ trợ mà không đồng thời loại bỏ vật thật. Nếu tầng lọc được đặt ở mức quá chặt, tỉ lệ đếm thiếu sẽ tăng lên để đổi lấy việc giảm đếm thừa; số liệu ở Bảng 4.3 không ghi nhận hiện tượng này. Đây
+là bằng chứng định lượng cho luận điểm trung tâm rằng thông tin RGB-D mang giá trị bổ sung thật
+sự chứ không chỉ là thông tin dư thừa so với ảnh màu.
+
+\section{Kết quả nhận diện từ vựng mở}
+
+\subsection{Chỉ số định lượng}
+
+Bảng~\ref{tab:nhan_dien} trả lời Câu hỏi nghiên cứu 1.2 trên 200 ảnh COCO val2017.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả nhận diện trên 200 ảnh COCO val2017, ghép một-một ở ngưỡng IoU $0{,}5$}
+\label{tab:nhan_dien}
+\small
+\begin{tabularx}{\textwidth}{X r}
+\toprule
+\textbf{Chỉ số} & \textbf{Giá trị} \\
+\midrule
+\multicolumn{2}{l}{\textit{Quy mô mẫu}} \\
+Số vật được chấm điểm & 585 \\
+Số vật ngoài phạm vi từ vựng & 29 \\
+Số vật thật không khớp được mặt nạ nào & 1.313 \\
+\midrule
+\multicolumn{2}{l}{\textit{Trên các mặt nạ đã khớp}} \\
+Top-1 & $42{,}74\%$ \\
+Top-3 & $71{,}45\%$ \\
+Tỉ lệ từ chối & $31{,}79\%$ \\
+Top-1 khi mô hình đã quyết định trả lời & $62{,}66\%$ \\
+\midrule
+\multicolumn{2}{l}{\textit{Đầu-cuối (tính cả bước phân vùng)}} \\
+Tỉ lệ khớp mặt nạ & $30{,}82\%$ \\
+\textbf{Top-1 đầu-cuối} & $\mathbf{13{,}17\%}$ \\
+Top-3 đầu-cuối & $22{,}02\%$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Phân rã độ chính xác từ mức mặt nạ đã khớp xuống mức đầu cuối}
+
+Khoảng cách giữa $42{,}74\%$ và $13{,}17\%$ là phát hiện đáng chú ý nhất của phần này, và nó
+minh hoạ chính xác vấn đề báo cáo số liệu đã nêu ở Mục 2.7.2. Hình~\ref{fig:phieu} biểu diễn
+quá trình suy giảm dưới dạng biểu đồ phễu.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,
+  width=0.82\textwidth, height=5.4cm,
+  bar width=17pt,
+  xlabel={Tỉ lệ (\%)},
+  symbolic y coords={{Top-1 đầu-cuối},{Khớp mặt nạ},{Top-1 trên mặt nạ khớp},{Top-3 trên mặt nạ khớp}},
+  ytick=data,
+  xmin=0, xmax=88,
+  xmajorgrids=true, grid style={black!15},
+  nodes near coords, nodes near coords style={font=\scriptsize},
+  tick label style={font=\small}, label style={font=\small},
+]
+\addplot[fill=black!30,draw=black!70] coordinates {
+  (71.45,{Top-3 trên mặt nạ khớp})
+  (42.74,{Top-1 trên mặt nạ khớp})
+  (30.82,{Khớp mặt nạ})
+  (13.17,{Top-1 đầu-cuối})
+};
+\end{axis}
+\end{tikzpicture}
+\caption{Phễu suy giảm độ chính xác: con số công bố thuận lợi nhất cao gấp hơn ba lần con số
+đầu-cuối}
+\label{fig:phieu}
+\end{figure}
+
+Con số $42{,}74\%$ chỉ có ý nghĩa \emph{với điều kiện} mặt nạ đã được khớp; nếu trình bày nó như
+độ chính xác của cả hệ thống thì đã phóng đại năng lực thực tế lên hơn ba lần.
+
+Điểm nghẽn nằm ở bước phân vùng chứ không phải bước nhận diện: chỉ $30{,}82\%$ số vật thật của
+COCO được ghép với một mặt nạ dự đoán, tức 1.313 vật hoàn toàn không được phát hiện. Nguyên nhân
+trực tiếp là lệch phân bố dữ liệu --- bộ phân vùng được huấn luyện trên cảnh bàn OCID với đồ gia
+dụng cỡ nhỏ đặt trên mặt phẳng, trong khi ảnh COCO là cảnh đời thường với người, xe cộ và nội
+thất ở đủ mọi tỉ lệ.
+
+Đáng chú ý là chính bộ phân vùng này đạt mAP50 $0{,}9697$ trên miền huấn luyện của nó
+(Bảng~\ref{tab:phan_vung}). Nguyên nhân do đó thuộc về khả năng khái quát hoá ngoài miền, trong khi năng lực của mô hình trên miền huấn luyện vẫn được bảo toàn. Phân biệt này là cơ sở cho hướng khắc phục đề xuất ở Chương~\ref{ch:tong_ket}.
+
+\subsection{Phân tích lỗi nhận diện}
+
+Bảng~\ref{tab:nham_lan} và Hình~\ref{fig:nham_lan_chart} liệt kê các cặp nhầm lẫn phổ biến nhất.
+
+\begin{table}[H]
+\centering
+\caption{Các cặp nhầm lẫn phổ biến nhất trong bước nhận diện}
+\label{tab:nham_lan}
+\small
+\begin{tabular}{llrl}
+\toprule
+\textbf{Nhãn thật} & \textbf{Nhãn dự đoán} & \textbf{Số lần} & \textbf{Kiểu lỗi} \\
+\midrule
+person       & unknown  & 45 & từ chối trả lời \\
+chair        & unknown  & 22 & từ chối trả lời \\
+cup          & unknown  & 18 & từ chối trả lời \\
+bowl         & unknown  & 17 & từ chối trả lời \\
+tv           & monitor  & 15 & nhầm lẫn ngữ nghĩa \\
+laptop       & monitor  &  6 & nhầm lẫn ngữ nghĩa \\
+dining table & unknown  &  5 & từ chối trả lời \\
+couch        & unknown  &  5 & từ chối trả lời \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar stacked,
+  width=0.82\textwidth, height=5.6cm,
+  bar width=13pt,
+  xlabel={Số lần xuất hiện},
+  symbolic y coords={couch,{dining table},laptop,tv,bowl,cup,chair,person},
+  ytick=data,
+  xmin=0, xmax=50,
+  xmajorgrids=true, grid style={black!15},
+  legend style={at={(0.5,-0.20)},anchor=north,legend columns=2,draw=black!30},
+  tick label style={font=\small}, label style={font=\small},
+]
+\addplot[fill=black!45,draw=black!70] coordinates {
+  (45,person) (22,chair) (18,cup) (17,bowl) (0,tv) (0,laptop) (5,{dining table}) (5,couch)};
+\addplot[fill=black!15,draw=black!70] coordinates {
+  (0,person) (0,chair) (0,cup) (0,bowl) (15,tv) (6,laptop) (0,{dining table}) (0,couch)};
+\legend{Từ chối trả lời (\texttt{unknown}), Nhầm lẫn ngữ nghĩa}
+\end{axis}
+\end{tikzpicture}
+\caption{Hai kiểu lỗi nhận diện khác nhau về bản chất và về mức độ nguy hiểm}
+\label{fig:nham_lan_chart}
+\end{figure}
+
+Bảng và biểu đồ cho thấy hai kiểu lỗi khác hẳn nhau về bản chất.
+
+\textbf{Kiểu thứ nhất, chiếm đa số, là mô hình từ chối trả lời.} Cơ chế từ chối
+(Bảng~\ref{tab:tu_choi}) kích hoạt trên các vật bị cắt cúp chặt hoặc che khuất nặng. Đây là hành
+vi \emph{đúng thiết kế}: thà trả về \texttt{unknown} còn hơn đưa ra một nhãn sai để rồi kéo theo
+một dải kích thước sai ở bước hiệu chỉnh. Việc \texttt{person} đứng đầu danh sách cũng dễ hiểu
+--- người trong ảnh COCO thường bị cắt cúp một phần và có tư thế rất đa dạng.
+
+\textbf{Kiểu thứ hai là nhầm lẫn ngữ nghĩa thật sự}, điển hình là \texttt{tv} bị gọi thành
+\texttt{monitor} (15 lần) và \texttt{laptop} cũng thành \texttt{monitor} (6 lần). Về mặt thị giác
+các lỗi này gần như không thể tránh vì cả ba đều là màn hình chữ nhật phát sáng; hệ quả thực tế
+lại nghiêm trọng hơn nhiều so với kiểu thứ nhất, vì dải kích thước của tivi và của màn hình máy
+tính chênh nhau đáng kể --- một nhãn sai kiểu này sẽ đưa vào một lá phiếu tỉ lệ sai lệch mạnh.
+
+\hopnhanmanh{Cơ chế từ chối chuyển phần lớn lỗi từ dạng ``sai nguy hiểm'' sang dạng ``không trả
+lời''. Đây là đánh đổi có chủ đích: tỉ lệ từ chối $31{,}79\%$ làm giảm top-1 nhưng bảo vệ bước
+hiệu chỉnh phía sau khỏi các lá phiếu độc hại.}
+
+\subsection{Tác động thực tế của việc ràng buộc từ vựng}
+
+Hình~\ref{fig:clip_cats} minh hoạ lỗi cụ thể mà thiết kế ràng buộc từ vựng đã sửa được.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{figures/clip_cats_after.png}
+\caption{Cảnh hai con mèo sau khi từ vựng được sinh từ bảng tri thức kích thước; với danh sách
+20 từ khoá cũ, cả hai từng bị gán nhãn \texttt{mouse}}
+\label{fig:clip_cats}
+\end{figure}
+
+Trường hợp ở Hình 4.7 cho thấy tác động của ràng buộc này. Với danh sách từ khoá thu hẹp ở phiên bản trước, lớp cat không có mặt trong từ vựng, nên hàm softmax buộc phải phân bổ xác suất cho lớp gần nhất còn lại và cho ra nhãn mouse với độ tự tin cao. Sau khi từ vựng được sinh trực tiếp từ bảng tri thức kích thước (87 lớp), lỗi này không còn xuất hiện. Đây là hạn chế thuộc về thiết kế hệ thống, không thuộc về năng lực của mô hình nhận diện.
+
+\section{Thí nghiệm kiểm soát tỉ lệ}
+
+Trước khi diễn giải kết quả hiệu chỉnh, cần xác nhận rằng bộ ước lượng tỉ lệ thực sự phản ứng với sai lệch tỉ lệ. Thí nghiệm kiểm soát được thiết kế theo hướng bơm một hệ số đã biết vào bản đồ độ sâu vốn đã đúng đơn vị, sau đó đo mức độ khôi phục.
+
+\begin{table}[H]
+\centering
+\caption{Thí nghiệm kiểm soát: khôi phục hệ số tỉ lệ được bơm vào có chủ đích}
+\label{tab:kiem_soat}
+\small
+\begin{tabular}{lrrl}
+\toprule
+\textbf{Đầu vào} & \textbf{Hệ số cần khôi phục} & \textbf{Hệ số ước lượng} & \textbf{Có áp dụng?} \\
+\midrule
+độ sâu đúng đơn vị    & $\times 1{,}000$ & $\times 0{,}951$ & không (trong vùng chết) \\
+độ sâu $\times 0{,}4$ & $\times 2{,}500$ & $\times 2{,}377$ & có \\
+độ sâu $\times 0{,}6$ & $\times 1{,}667$ & $\times 1{,}585$ & có \\
+độ sâu $\times 1{,}8$ & $\times 0{,}556$ & $\times 0{,}528$ & có \\
+độ sâu $\times 2{,}5$ & $\times 0{,}400$ & $\times 0{,}380$ & có \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hình~\ref{fig:control_chart} biểu diễn quan hệ giữa giá trị cần khôi phục và giá trị ước lượng
+được.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.72\textwidth, height=6.6cm,
+  xlabel={Hệ số cần khôi phục}, ylabel={Hệ số ước lượng được},
+  xmin=0, xmax=2.8, ymin=0, ymax=2.8,
+  grid=both, grid style={black!12},
+  legend style={at={(0.03,0.97)},anchor=north west,draw=black!30,font=\small},
+  tick label style={font=\small}, label style={font=\small},
+]
+% duong ly tuong y = x
+\addplot[domain=0:2.8,samples=2,dashed,black!55,thick] {x};
+\addlegendentry{lý tưởng ($y=x$)}
+% diem do duoc
+\addplot[only marks,mark=*,mark size=2.4pt,black] coordinates {
+  (1.000,0.951) (2.500,2.377) (1.667,1.585) (0.556,0.528) (0.400,0.380)};
+\addlegendentry{đo được}
+\end{axis}
+\end{tikzpicture}
+\caption{Hệ số ước lượng bám sát đường lý tưởng với độ lệch hệ thống khoảng $5\%$ về phía dưới}
+\label{fig:control_chart}
+\end{figure}
+
+Bộ ước lượng khôi phục đúng hướng và đúng độ lớn trong sai số khoảng $5\%$, đồng thời không can
+thiệp vào bản đồ độ sâu vốn đã đúng. Các điểm đo phân bố lệch nhất quán về phía dưới đường lý tưởng, cho thấy sai lệch mang tính hệ thống thay vì dao động ngẫu nhiên quanh giá trị đúng. Nguyên nhân đã xác định được:
+phần dư $5\%$ chính là sai số đo của vật neo --- quả táo tổng hợp đo ra $8{,}4$~cm so với cạnh
+thật $6{,}0$~cm của khối lập phương sinh ra nó.
+
+Trên dữ liệu OCID thật, hệ số trung vị trên độ sâu cảm biến là $0{,}9551$ (sát 1 như kỳ vọng)
+trong khi trên độ sâu MiDaS là $1{,}3483$ (lệch xa 1). Thí nghiệm kết luận \texttt{PASS}.
+
+\section{Đánh giá cơ chế hiệu chỉnh tỉ lệ}
+
+Giả thuyết ban đầu của đề tài là cơ chế hiệu chỉnh tỉ lệ sẽ làm phép đo chính xác hơn. Thực
+nghiệm bác bỏ giả thuyết này.
+
+\subsection{Số liệu}
+
+\begin{table}[H]
+\centering
+\caption{Đánh giá để-lại-một cơ chế hiệu chỉnh tỉ lệ trên 50 khung hình OCID}
+\label{tab:hieu_chinh}
+\small
+\begin{tabularx}{\textwidth}{X r}
+\toprule
+\textbf{Chỉ số} & \textbf{Giá trị} \\
+\midrule
+Số vật quan sát được & 275 \\
+Số vật đánh giá được theo để-lại-một & 249 \\
+Tỉ lệ vật được nhận diện & $61{,}1\%$ \\
+Tỉ lệ có áp dụng hiệu chỉnh & $76{,}3\%$ \\
+\midrule
+MAE trước hiệu chỉnh & $10{,}143$~cm \\
+MAE sau hiệu chỉnh (để-lại-một) & $12{,}598$~cm \\
+Trung vị sai số trước & $3{,}92$~cm \\
+Trung vị sai số sau & $5{,}22$~cm \\
+\textbf{Mức thay đổi tương đối} & $\mathbf{-24{,}2\%}$ \textbf{(xấu đi)} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,
+  width=0.7\textwidth, height=6.0cm,
+  bar width=22pt,
+  ylabel={Sai số (cm)},
+  symbolic x coords={Trung bình (MAE), Trung vị},
+  xtick=data,
+  ymin=0, ymax=15.5,
+  ymajorgrids=true, grid style={black!15},
+  legend style={at={(0.5,-0.16)},anchor=north,legend columns=2,draw=black!30},
+  nodes near coords, nodes near coords style={font=\scriptsize},
+  tick label style={font=\small}, label style={font=\small},
+]
+\addplot[fill=black!22,draw=black!70] coordinates {(Trung bình (MAE),10.143) (Trung vị,3.92)};
+\addplot[fill=black!55,draw=black!70] coordinates {(Trung bình (MAE),12.598) (Trung vị,5.22)};
+\legend{Trước hiệu chỉnh, Sau hiệu chỉnh}
+\end{axis}
+\end{tikzpicture}
+\caption{Hiệu chỉnh làm sai số tăng ở cả trung bình lẫn trung vị --- không phải hiện tượng do
+vài trường hợp cực đoan}
+\label{fig:hc_chart}
+\end{figure}
+
+Kết quả xấu đi nhất quán ở cả trung bình lẫn trung vị, nên đây không phải hiện tượng do một vài
+trường hợp cực đoan gây ra. Nếu chỉ trung bình xấu đi mà trung vị cải thiện, ta có thể nghi ngờ
+một số ít vật bị hiệu chỉnh sai nghiêm trọng kéo lệch chỉ số; thực tế không phải như vậy.
+
+\subsection{Ba nguyên nhân}
+
+\textbf{Thứ nhất, chất lượng nhận diện làm nhiễu các lá phiếu.} Chỉ $61{,}1\%$ số vật được gọi
+tên, và như đã thấy ở Bảng~\ref{tab:nham_lan}, một phần trong số đó bị gán nhãn sai. Mỗi nhãn
+sai chọn một giá trị neo sai theo Công thức~\eqref{eq:vote}, sinh ra một lá phiếu sai. Cơ chế
+trung vị chịu đựng được thiểu số phiếu sai, nhưng khi số phiếu trong một ảnh ít --- nhiều khung
+hình chỉ có một tới ba vật đủ điều kiện --- thì trung vị mất tác dụng bảo vệ. Trường hợp cực
+đoan là ảnh chỉ có một phiếu, khi đó trung vị chính là lá phiếu đó và không có cơ chế phòng vệ
+nào cả.
+
+\textbf{Thứ hai, và đây là nguyên nhân sâu xa hơn, giả định nền tảng bị vi phạm.}
+Công thức~\eqref{eq:scale_assume} ở Chương~\ref{ch:co_so} chỉ đúng khi hình học \emph{tương đối}
+giữa các vật trong bản đồ độ sâu là chính xác, tức sai lệch thuần tuý mang tính nhân. Trên thực
+tế MiDaS thường sai chính hình học tương đối này: hai vật ở hai khoảng cách khác nhau bị nén
+hoặc giãn không đồng đều. Khi đó không tồn tại bất kỳ hệ số đơn nào khớp được cho cả hai, và
+việc nhân một hệ số chung sẽ kéo vật này về đúng trong khi đẩy vật kia ra xa hơn.
+
+\textbf{Thứ ba, các chốt an toàn giảm thiểu nhưng không loại trừ được thiệt hại.} Tỉ lệ áp dụng
+hiệu chỉnh là $76{,}3\%$, nghĩa là hệ thống đã từ chối gần một phần tư số trường hợp nhờ vùng
+chết và hai chốt ở Thuật toán~\ref{alg:calib}. Nhưng $76{,}3\%$ còn lại vẫn đủ để kéo chỉ số
+chung xuống.
+
+\subsection{Phân tích các trường hợp thất bại}
+
+Hình~\ref{fig:that_bai} minh hoạ hai kiểu thất bại điển hình bằng ảnh thật.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/fail_02_living_room_tv.png}
+  \caption{Nhãn sai lan sang hiệu chỉnh}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/fail_01_cats_with_remotes.png}
+  \caption{Hình học tương đối sai}
+\end{subfigure}
+\caption{Hai kiểu thất bại của cơ chế hiệu chỉnh tỉ lệ trên ảnh thật}
+\label{fig:that_bai}
+\end{figure}
+
+Ở cảnh phòng khách, hai trong ba vật bỏ phiếu là đồ trang trí bị nhận diện nhầm thành
+\texttt{perfume bottle} và \texttt{egg}; hệ số thu được là $\times 0{,}459$ khiến những chiếc
+ghế bị đo ra khoảng 16~cm. Đây là hiện thân của nguyên nhân thứ nhất.
+
+Ở cảnh hai con mèo, cả hai đều được nhận diện \emph{đúng} nhưng chúng nằm ở hai khoảng cách rất
+khác nhau: một con ra 48~cm (đúng) còn con kia ra 65~cm. Không có lỗi nhận diện nào ở đây --- đây
+chính là nguyên nhân thứ hai, và nó cho thấy vì sao việc chỉ sửa chất lượng nhận diện là chưa đủ.
+
+Hình~\ref{fig:tuchoi_dung} minh hoạ trường hợp hệ thống hành xử đúng khi từ chối.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/fail_04_banana_and_donut.png}
+  \caption{Cảnh chuối và bánh donut}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/fail_05_two_people_indoors.png}
+  \caption{Cảnh hai người trong nhà}
+\end{subfigure}
+\caption{Hai cảnh mà mọi vật ứng cử đều chạm mép ảnh; hệ thống từ chối hiệu chỉnh hoàn toàn}
+\label{fig:tuchoi_dung}
+\end{figure}
+
+Ở hai cảnh này, mọi vật ứng cử đều chạm mép ảnh nên bị điều kiện loại vật bị cắt
+(\texttt{exclude\-\_truncated}) loại khỏi tập bỏ phiếu, dẫn tới $|V| = 0$ và hệ thống từ chối
+hiệu chỉnh hoàn toàn. Hành vi này
+đúng thiết kế: thà không đưa ra con số còn hơn đưa ra con số thiên lệch, vì vật bị cắt luôn đo
+ngắn hơn thực tế và sẽ đẩy hệ số tỉ lệ lên cao một cách có hệ thống.
+
+\hopnhanmanh[Bài học phương pháp luận]{Có thể rút ra một nhận định về mặt phương pháp luận từ cặp kết quả trái chiều này. Thí nghiệm kiểm soát chỉ chứng minh bộ ước lượng phản ứng đúng với sai lệch tỉ lệ thuần tuý; nó không chứng minh rằng đó là dạng sai lệch chi phối trong dữ liệu thật. Một thí nghiệm kiểm soát đạt vì vậy là điều kiện cần nhưng chưa đủ để kết luận cơ chế có hiệu quả trên dữ liệu thực tế.}
+
+\subsection{Vì sao vẫn tin con số âm tính này}
+
+Độ tin cậy của kết quả âm tính phụ thuộc vào việc thiết kế đánh giá có tự nó tạo ra kết quả đó hay không. Các đặc điểm sau của thiết kế trình bày ở Mục 3.4.3 và Hình 3.4 cho phép loại trừ khả năng này.
+
+Thứ nhất, cả nhánh tham chiếu và nhánh dự đoán dùng chung mặt nạ thật, nên chất lượng phân vùng
+không phải biến gây nhiễu. Thứ hai, cả hai cùng đo phần nhìn thấy, nên không có sai lệch hệ
+thống giữa hai đại lượng so sánh --- đây là lý do đề tài từ chối dùng kích thước CAD. Thứ ba,
+thủ tục để-lại-một loại vật $j$ khỏi cả lá phiếu lẫn chốt kiểm tra hậu nghiệm của chính nó, nên
+con số không thể được ``bảo lãnh'' bởi định nghĩa.
+
+Nếu thay bằng cách đánh giá vòng tròn thông thường mô tả ở Mục~\ref{sec:vongtron}, phép hiệu
+chỉnh sẽ luôn tỏ ra có ích --- và đó chính là điều đề tài muốn tránh.
+
+\section{Kiểm soát quan hệ không gian}
+
+Trên cảnh tổng hợp với 12 cặp có hướng và 14 nhãn, hệ thống đạt độ chính xác trùng khớp toàn tập
+bằng $1{,}0$ và $F_1$ vi mô bằng $1{,}0$. Bảng~\ref{tab:quan_he} trình bày chi tiết theo từng vị
+từ.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả kiểm soát quan hệ không gian trên cảnh tổng hợp}
+\label{tab:quan_he}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Vị từ} & \textbf{Độ chính xác} & \textbf{Độ bao phủ} & \textbf{$F_1$} & \textbf{Số mẫu} \\
+\midrule
+\texttt{in\_front\_of}          & $1{,}0$ & $1{,}0$ & $1{,}0$ & 6 \\
+\texttt{behind}                 & $1{,}0$ & $1{,}0$ & $1{,}0$ & 6 \\
+\texttt{overlaps}               & $1{,}0$ & $1{,}0$ & $1{,}0$ & 1 \\
+\texttt{likely\_on\_top\_of}    & $1{,}0$ & $1{,}0$ & $1{,}0$ & 1 \\
+\texttt{occludes}               & --- & --- & --- & \textbf{0} \\
+\texttt{partially\_occluded\_by}& --- & --- & --- & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.52\textwidth}
+  \includegraphics[width=\textwidth]{figures/relations_by_label.png}
+  \caption{Chỉ số theo từng vị từ}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.42\textwidth}
+  \includegraphics[width=\textwidth]{figures/synth_relation_graph.png}
+  \caption{Đồ thị quan hệ sinh ra}
+\end{subfigure}
+\caption{Kết quả kiểm soát quan hệ không gian và đồ thị cảnh tương ứng}
+\label{fig:quan_he}
+\end{figure}
+
+Con số $F_1 = 1{,}0$ \emph{không phải} độ chính xác trên ảnh thật. Cảnh tổng hợp có hình học biết
+trước hoàn toàn, nên bảng đáp án được viết ra \emph{trước khi} chạy suy luận; kết quả chỉ khẳng
+định rằng các vị từ và đồ thị quan hệ được nối đúng --- đúng vai trò của một thí nghiệm kiểm
+soát phần mềm.
+
+Ngoài ra, Bảng~\ref{tab:quan_he} bộc lộ một hạn chế cụ thể. Hai vị từ liên quan tới che khuất
+--- \texttt{occludes} và \texttt{partially\-\_occluded\-\_by} --- có số mẫu bằng 0 trong cảnh
+này, nên chúng \emph{hoàn toàn chưa được kiểm chứng} dù chỉ số tổng thể là hoàn hảo. Đây là ví
+dụ điển hình cho việc một chỉ số vi mô đẹp có thể che giấu vùng chưa được kiểm tra.
+
+\section{Kết quả định tính trên ảnh đời thường}
+
+Để đánh giá khả năng hoạt động ngoài miền huấn luyện, hệ thống được chạy trên các ảnh đời thường
+tải từ Internet. Hình~\ref{fig:demo_pipeline} minh hoạ đầy đủ các bước xử lý trên một cảnh bếp.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.235\textwidth}
+  \includegraphics[width=\textwidth]{figures/kitchen_rgb.png}
+  \caption{Ảnh gốc}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.235\textwidth}
+  \includegraphics[width=\textwidth]{figures/kitchen_depth.png}
+  \caption{Độ sâu MiDaS}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.235\textwidth}
+  \includegraphics[width=\textwidth]{figures/kitchen_masks.png}
+  \caption{Mặt nạ}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.235\textwidth}
+  \includegraphics[width=\textwidth]{figures/kitchen_graph.png}
+  \caption{Đồ thị quan hệ}
+\end{subfigure}
+\caption{Các bước xử lý trên một cảnh bếp đời thường, chỉ dùng ảnh màu làm đầu vào}
+\label{fig:demo_pipeline}
+\end{figure}
+
+Hình~\ref{fig:demo_good} trình bày kết quả cuối cùng trên bốn cảnh khác nhau về chủng loại.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/demo_03_kitchen_table.png}
+  \caption{Bàn bếp}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/demo_04_desk_laptop.png}
+  \caption{Bàn làm việc}
+\end{subfigure}
+
+\vspace{6pt}
+
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/demo_05_dining_setup.png}
+  \caption{Bàn ăn}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+  \includegraphics[width=\textwidth]{figures/demo_02_living_room.png}
+  \caption{Phòng khách}
+\end{subfigure}
+\caption{Kết quả đo kích thước trên ảnh đời thường, không có cảm biến độ sâu}
+\label{fig:demo_good}
+\end{figure}
+
+Quan sát cho thấy hệ thống hoạt động ổn định nhất trên các cảnh gần với miền huấn luyện --- bàn
+bếp, bàn làm việc, bàn ăn --- nơi vật có kích thước vừa phải đặt trên một mặt phẳng. Kết quả kém
+ổn định hơn ở cảnh phòng khách với vật ở nhiều độ sâu rất khác nhau, phù hợp với phân tích
+nguyên nhân thứ hai ở mục trước.
+
+Hình~\ref{fig:demo_street} cho thấy một trường hợp ngoài phạm vi thiết kế.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\textwidth]{figures/demo_06_street_bus.png}
+\caption{Cảnh đường phố --- vượt xa phạm vi thiết kế của hệ thống (cảnh bàn trong nhà)}
+\label{fig:demo_street}
+\end{figure}
+
+Cảnh đường phố nằm hoàn toàn ngoài phạm vi mà hệ thống được thiết kế và huấn luyện. Kết quả ở
+đây chỉ có giá trị minh hoạ giới hạn của phương pháp, không được diễn giải như một phép đo có ý
+nghĩa.
+
+\section{Bàn luận}
+
+\subsection{Đối chiếu với các công trình liên quan}
+
+Kết quả của đề tài tương đồng với các công trình đã nêu ở Chương~\ref{ch:co_so} ở điểm phân vùng
+class-agnostic hoạt động tốt trên OCID, phù hợp với nhận định của UOIS \cite{xie2021uois} rằng
+việc học ranh giới vật tổng quát hoá tốt hơn học đặc trưng theo lớp. Điểm khác biệt nằm ở chỗ đề
+tài đi tiếp một bước --- gắn danh tính và kích thước --- và chính bước đi tiếp này bộc lộ ra rào
+cản mà các công trình dừng ở mặt nạ không gặp phải.
+
+Khoảng cách giữa $42{,}74\%$ và $13{,}17\%$ ở Hình~\ref{fig:phieu} củng cố nhận xét ở Mục 2.7.2
+rằng việc chỉ công bố con số thuận lợi sẽ làm người đọc hiểu sai năng lực hệ thống. Quan sát này ủng hộ nhận định ở Mục 2.7.2 rằng độ chính xác nhận diện tính trên các mặt nạ đã khớp chỉ diễn giải được khi đi kèm tỉ lệ khớp mặt nạ. Vì lý do đó, đề tài trình bày hai con số cạnh nhau ở mọi bảng kết quả liên quan.
+
+\subsection{Phạm vi của kết luận âm tính}
+
+Cần phát biểu chính xác điều mà kết quả âm tính bác bỏ và điều nó \emph{không} bác bỏ.
+
+Kết quả này \textbf{không} bác bỏ ý tưởng dùng tri thức kích thước tiên nghiệm nói chung. Nó bác
+bỏ một dạng cụ thể: giả định một hệ số nhân duy nhất cho toàn ảnh, khi nguồn độ sâu là mô hình
+đơn mắt có hình học tương đối không đáng tin, và khi chất lượng nhận diện chỉ đạt $61{,}1\%$.
+Đường đi dùng vật tham chiếu đã biết kích thước --- không phụ thuộc vào nhận diện --- vẫn chưa
+bị bác bỏ và được nêu như hướng phát triển ở Chương~\ref{ch:tong_ket}.
+
+Phân tích này cũng làm rõ vì sao một thiết kế đánh giá vòng tròn sẽ luôn cho kết quả dương tính đối với cách tiếp cận tương tự: khi tiêu chí nghiệm thu trùng với nguồn hiệu chỉnh, phép hiệu chỉnh về mặt cấu trúc không thể thất bại. Bản thân đề tài cũng đã trải qua một phiên bản mắc hạn chế này trước khi chuyển sang thủ tục loại-một-ra.
+
+\subsection{Giới hạn của các con số đã báo cáo}
+
+Cuối cùng, cần lưu ý rằng mọi con số trong chương này đến từ \emph{một} lần chạy tất định với
+hạt giống cố định, trên các mẫu có quy mô vừa phải: 312 khung hình cho phân vùng, 200 khung hình
+cho đếm, 200 ảnh cho nhận diện, và 50 khung hình với 249 vật cho hiệu chỉnh. Chúng đủ để kết
+luận về \emph{chiều hướng} --- độ sâu giúp đếm tốt hơn, hiệu chỉnh làm sai số tăng --- nhưng
+chưa kèm khoảng tin cậy nên không nên diễn giải chính xác tới chữ số thập phân cuối cùng.

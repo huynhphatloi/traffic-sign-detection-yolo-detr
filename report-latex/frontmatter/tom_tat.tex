@@ -1,0 +1,57 @@
+% ================= TÓM TẮT =================
+\newpage
+\thispagestyle{plain}
+
+\begin{center}
+    {\bfseries\Large TÓM TẮT}
+\end{center}
+
+\vspace{1cm}
+
+Phát hiện biển báo giao thông là một khối chức năng bắt buộc của hệ thống hỗ trợ lái tiên tiến và
+xe tự hành. Điểm khó của bài toán không nằm ở việc đạt một chỉ số mAP cao trên tập kiểm tra, mà ở
+chỗ mô hình phải chạy được trên phần cứng nhúng gắn trên xe, nơi bộ nhớ và ngân sách năng lượng
+đều bị giới hạn nghiêm ngặt. Điều này dẫn tới nhu cầu \emph{nén mô hình}: làm cho mô hình nhỏ hơn
+và nhanh hơn mà không đánh mất năng lực phát hiện. Hai kỹ thuật nén phổ biến nhất là chưng cất tri
+thức và lượng tử hoá sau huấn luyện. Đề tài đặt câu hỏi hai kỹ thuật này thực sự mang lại gì trong
+bối cảnh một bộ dữ liệu biển báo quy mô vừa, và quan trọng hơn, cái giá phải trả nằm ở đâu.
+
+Đề tài sử dụng bộ dữ liệu \textit{pkdarabi/cardetection} trên Kaggle, gồm 4.969 ảnh độ phân giải
+416$\times$416 với 6.012 hộp bao thuộc 15 lớp là đèn tín hiệu và biển giới hạn tốc độ. Trước khi
+huấn luyện, một phân tích khám phá đầy đủ được thực hiện: phân bố lớp, thống kê kích thước hộp bao,
+bản đồ nhiệt vị trí vật thể, kiểm tra chất lượng nhãn và kiểm toán rò rỉ dữ liệu giữa các tập. Năm
+cấu hình được khảo sát trong cùng một lượt chạy: mô hình thầy YOLO26s, mô hình học trò YOLO26n
+huấn luyện thông thường làm đối chứng, mô hình học trò được chưng cất từ thầy, cùng hai bản xuất
+sang ONNX ở độ chính xác FP32 và INT8.
+
+Điểm then chốt về mặt phương pháp là toàn bộ năm cấu hình được đánh giá bằng \textbf{pycocotools}
+trên cùng một tệp chú thích COCO, nhờ đó ngoài mAP tổng còn thu được $AP$ tách riêng cho từng nhóm
+kích thước vật thể. Ngoài ra, năm ngưỡng chấp nhận được khai báo \emph{trước} khi chạy thực nghiệm,
+buộc người thực hiện cam kết tiêu chí đánh giá trước khi nhìn thấy số liệu.
+
+Kết quả cho thấy mô hình học trò được chưng cất đạt mAP@0,5 bằng 0,9014, \emph{thấp hơn} mô hình
+đối chứng huấn luyện thông thường (0,9348) 3,34 điểm phần trăm --- một kết quả âm đi ngược giả
+thuyết ban đầu. Lượng tử hoá INT8 giảm dung lượng tệp 70,3\% và chỉ làm mAP@0,5 giảm 0,0038. Tuy
+nhiên chỉ số tách theo kích thước vật thể cho một bức tranh hoàn toàn khác: cùng phép lượng tử hoá
+đó làm $AP$ trên nhóm vật thể nhỏ giảm 0,0247, tức \textbf{gấp 6,5 lần} mức suy giảm của mAP tổng.
+Trong năm ngưỡng chấp nhận, ba đạt và hai không đạt, cả hai ngưỡng không đạt đều thuộc về giả
+thuyết chưng cất.
+
+Luận điểm này được kiểm chứng độc lập trên ba đoạn video đường phố ngoài phân bố huấn luyện. Vì
+video không có nhãn thật nên phép kiểm chứng không đo độ chính xác, mà kiểm tra một dự đoán có thể
+sai: nếu điểm yếu thật nằm ở vật thể nhỏ thì việc tăng độ phân giải đầu vào phải làm lộ thêm các
+phát hiện nhỏ một cách chọn lọc. Kết quả đúng như dự đoán --- nhóm vật thể vừa chỉ tăng 1,4 lần
+trong khi hai nhóm nhỏ tăng 6,1 và 6,7 lần.
+
+Đóng góp của đề tài không nằm ở một con số mAP cao mà ở hai phát hiện mang tính phương pháp luận.
+Thứ nhất, mAP tổng che giấu gần như hoàn toàn chi phí thật của các phép nén mô hình; chỉ khi tách
+$AP$ theo nhóm kích thước mới thấy được rằng toàn bộ suy giảm dồn vào vật thể nhỏ --- đúng nhóm
+quan trọng nhất với bài toán biển báo, nơi biển ở xa quyết định thời gian phản ứng của xe. Thứ hai,
+phân tích thành phần bộ dữ liệu chỉ ra 38,68\% số ảnh là ảnh cắt cận cảnh kiểu GTSRB khiến phân bố
+kích thước bị lưỡng cực, và kiểm toán rò rỉ phát hiện 10,2\% tập kiểm tra có bản sao trong tập huấn
+luyện. Hạn chế lớn nhất là nhánh chưng cất chạy với kích thước lô nhỏ hơn nhánh đối chứng, một yếu
+tố gây nhiễu chưa được kiểm soát.
+
+\vspace{0.5cm}
+\noindent\textbf{Từ khoá:} phát hiện biển báo giao thông, chưng cất tri thức, lượng tử hoá,
+nén mô hình, vật thể nhỏ, kết quả âm, rò rỉ dữ liệu.

@@ -1,0 +1,52 @@
+% ================= LỜI CAM ĐOAN =================
+\newpage
+\thispagestyle{plain}
+
+\begin{center}
+    {\bfseries\Large LỜI CAM ĐOAN}
+\end{center}
+
+\vspace{1cm}
+
+Tôi xin cam đoan bài tiểu luận với đề tài
+``\projecttitle''
+là kết quả nghiên cứu và thực hiện của cá nhân tôi dưới sự hướng dẫn của giảng viên phụ trách học phần.
+
+Toàn bộ mã nguồn, quy trình huấn luyện và các kịch bản đánh giá trong đề tài do tôi tự xây dựng.
+Các mô hình tiền huấn luyện được sử dụng lại (YOLOv8-seg, CLIP, MiDaS) và các bộ dữ liệu công
+khai (OCID, COCO val2017) đều được ghi rõ nguồn gốc, giấy phép và cách truy cập trong phần tài
+liệu tham khảo cùng phụ lục.
+
+Tôi cam đoan các số liệu báo cáo trong bài là kết quả thực nghiệm, được sinh ra từ một tệp trọng số duy nhất có mã băm SHA-256 ghi trong Phụ lục. Các kết quả được trình bày đúng theo kết quả thu được, bao gồm cả những kết quả không ủng hộ giả thuyết ban đầu. Mọi tệp kết quả trung gian được lưu công khai trong kho mã nguồn để có thể đối chiếu.
+
+Tôi cam đoan rằng bài tiểu luận không sao chép nguyên văn từ bất kỳ công trình nào khác. Các thực
+nghiệm được thực hiện trung thực, có cơ sở kiểm chứng và có thể tái lập. Mọi sai sót, nếu có, thuộc
+trách nhiệm của cá nhân tôi.
+
+\vspace{1.5cm}
+
+\begin{flushright}
+    \placefulldate
+\end{flushright}
+
+\vspace{0.3cm}
+
+\begin{flushright}
+    \begin{minipage}{8.5cm}
+        \centering
+        \textbf{Học viên thực hiện}\\
+        \textit{(Ký và ghi rõ họ tên)}
+
+        % Bật chữ ký: đặt \showsignaturetrue trong config/metadata.tex
+        % và để tệp ảnh chữ ký tại figures/chuky.png
+        \ifshowsignature
+            \IfFileExists{figures/chuky.png}
+                {\includegraphics[width=0.5\textwidth]{figures/chuky.png}}
+                {\vspace{2cm}}
+        \else
+            \vspace{2cm}
+        \fi
+
+        \textbf{\studentname}
+    \end{minipage}
+\end{flushright}

@@ -1,0 +1,53 @@
+% ================= TÓM TẮT =================
+\newpage
+\thispagestyle{plain}
+
+\begin{center}
+    {\bfseries\Large TÓM TẮT}
+\end{center}
+
+\vspace{1cm}
+
+Phát hiện biển báo giao thông là một khối chức năng bắt buộc của hệ thống hỗ trợ lái tiên tiến và
+xe tự hành. Bài toán đặt ra hai ràng buộc đối nghịch: mô hình phải đủ chính xác để không bỏ sót
+biển báo, đồng thời phải đủ nhẹ và đủ nhanh để chạy thời gian thực trên phần cứng nhúng gắn trên
+xe. Trong vài năm gần đây, hai họ kiến trúc thống trị lĩnh vực phát hiện đối tượng đi theo hai
+triết lý khác hẳn nhau: họ một giai đoạn dựa trên mạng tích chập mà đại diện là YOLO, và họ
+transformer dự đoán theo tập hợp mà đại diện là DETR. Câu hỏi thực tiễn đặt ra cho người triển
+khai là: với một bộ dữ liệu quy mô vừa và ngân sách tính toán của một đồ án học phần, họ nào cho
+kết quả tốt hơn, và cái giá phải trả cho mỗi lựa chọn là gì.
+
+Đề tài sử dụng bộ dữ liệu \textit{pkdarabi/cardetection} trên Kaggle, gồm 4.969 ảnh độ phân giải
+416$\times$416 với 6.012 hộp bao thuộc 15 lớp là đèn tín hiệu và biển giới hạn tốc độ. Toàn bộ quy
+trình được xây dựng dưới dạng các mô-đun Python độc lập, có kiểm thử tự động, với sổ tay Jupyter
+chỉ đóng vai trò điều phối. Bốn nhóm thực nghiệm được tiến hành: so sánh mô hình nền giữa YOLOv8n
+và DETR-ResNet50; khảo sát ba kiến trúc nhẹ thay thế gồm YOLO11n, SSDLite-MobileNetV3 và
+D-FINE-Nano; lượng tử hoá sau huấn luyện theo ba đường FP16, ONNX INT8 và OpenVINO INT8; và cuối
+cùng là chưng cất tri thức từ YOLO26s sang YOLO26n.
+
+Mọi mô hình được huấn luyện với cùng một hạt giống ngẫu nhiên và được đánh giá trên tập kiểm tra
+tách biệt. Các độ đo gồm mAP tại ngưỡng IoU 0,5 và mAP trung bình trên dải ngưỡng 0,5--0,95, kèm
+theo độ trễ suy luận, tốc độ khung hình và dung lượng mô hình để phản ánh ràng buộc triển khai.
+Một phân tích khám phá dữ liệu đầy đủ được thực hiện trước khi huấn luyện, bao gồm phân bố lớp,
+thống kê kích thước hộp bao, bản đồ nhiệt vị trí vật thể và kiểm tra chất lượng nhãn.
+
+Kết quả cho thấy YOLOv8n đạt mAP@0,5 bằng 0,9539 và mAP@0,5:0,95 bằng 0,8058 trên tập kiểm tra,
+với 6,25~MB trọng số và độ trễ 8,83~ms mỗi ảnh. DETR-ResNet50 chỉ đạt mAP@0,5 bằng 0,1220 sau 10
+chu kỳ huấn luyện, tức kém hơn gần tám lần, đồng thời nặng hơn 26,6 lần và chậm hơn 7,2
+lần. Ba kiến trúc nhẹ ở nhóm thực nghiệm thứ hai đều không vượt được mô hình nền. Lượng tử hoá
+FP16 giữ nguyên độ chính xác trong khi giảm khoảng một nửa dung lượng, còn INT8 tuy nén mạnh hơn
+nhưng lại chậm đi trên môi trường thử nghiệm. Chưng cất tri thức cho kết quả \emph{âm}: mô hình
+học trò được chưng cất đạt 0,9014, thấp hơn chính nó khi huấn luyện thông thường (0,9348).
+
+Đóng góp của đề tài không nằm ở một con số mAP cao mà ở hai phát hiện mang tính phương pháp luận.
+Thứ nhất, khoảng cách giữa DETR và YOLO trong điều kiện này chủ yếu do điều kiện huấn luyện bất
+đối xứng chứ không phải do bản chất kiến trúc, và báo cáo phân tách rõ từng yếu tố gây nhiễu. Thứ
+hai, phân tích thành phần bộ dữ liệu chỉ ra rằng 38,7\% số ảnh huấn luyện là ảnh cắt cận cảnh có
+cạnh biển chiếm tới 66,8\% cạnh ảnh, khiến phân bố kích thước vật thể bị lưỡng cực và giải thích
+vì sao mô hình đạt mAP rất cao trên tập kiểm tra nhưng suy giảm rõ rệt trên video đường phố thực
+tế. Hạn chế lớn nhất là hai nhánh mô hình dùng hai thư viện tính mAP khác nhau và bộ dữ liệu tồn
+tại hiện tượng trùng ảnh giữa các tập.
+
+\vspace{0.5cm}
+\noindent\textbf{Từ khoá:} phát hiện biển báo giao thông, YOLO, DETR, lượng tử hoá,
+chưng cất tri thức, dịch chuyển miền, vật thể nhỏ.

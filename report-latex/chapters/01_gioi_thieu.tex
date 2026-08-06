@@ -1,0 +1,135 @@
+\chapter{GIỚI THIỆU TỔNG QUAN}
+\label{ch:gioi_thieu}
+
+\section{Đặt vấn đề}
+
+Xe tự hành và các hệ thống hỗ trợ lái tiên tiến (ADAS) phải hiểu được môi trường giao thông xung
+quanh trước khi có thể ra bất kỳ quyết định điều khiển nào. Trong số các thành phần của bài toán
+nhận thức đó, phát hiện biển báo giao thông giữ một vị trí đặc biệt: biển báo là kênh giao tiếp
+chính thức giữa hạ tầng đường bộ và người lái, và nội dung của nó ràng buộc trực tiếp hành vi hợp
+pháp của phương tiện. Một hệ thống bỏ sót biển giới hạn tốc độ hoặc đọc nhầm đèn tín hiệu không chỉ
+gây khó chịu mà có thể dẫn tới hậu quả về an toàn và pháp lý.
+
+Về mặt kỹ thuật, đây là bài toán phát hiện đối tượng: với mỗi ảnh đầu vào, mô hình phải đồng thời
+\emph{định vị} từng biển báo bằng một hộp bao và \emph{phân loại} nó vào đúng chủng loại. Các bộ
+phát hiện một giai đoạn thuộc họ YOLO~\cite{redmon2016yolo,jocher2023ultralytics} hiện là lựa chọn
+mặc định cho ứng dụng thời gian thực nhờ chỉ cần một lượt truyền xuôi.
+
+Tuy nhiên, đạt được một chỉ số mAP cao trên tập kiểm tra mới chỉ là một nửa bài toán. Nửa còn lại
+--- và cũng là nửa quyết định việc hệ thống có triển khai được hay không --- là ràng buộc tài
+nguyên. Máy tính gắn trên xe không có card đồ hoạ máy chủ; nó có ngân sách bộ nhớ, băng thông và
+điện năng rất hạn hẹp. Do đó nhu cầu \emph{nén mô hình} trở thành trung tâm: làm sao để mô hình nhỏ
+hơn và nhanh hơn mà không đánh mất năng lực phát hiện.
+
+Hai họ kỹ thuật nén phổ biến nhất đi theo hai hướng khác nhau. \textbf{Chưng cất tri
+thức}~\cite{hinton2015distillation} tác động ở khâu huấn luyện: một mô hình học trò nhỏ được dạy
+bắt chước phân phối đầu ra mềm của một mô hình thầy lớn hơn, với kỳ vọng thu được năng lực vượt quá
+mức mà kích thước của nó cho phép. \textbf{Lượng tử hoá sau huấn
+luyện}~\cite{jacob2018quantization} tác động ở khâu triển khai: thay biểu diễn dấu phẩy động bằng
+biểu diễn số nguyên độ rộng bit thấp hơn, không cần huấn luyện lại.
+
+Cả hai kỹ thuật đều được trình bày rộng rãi kèm những con số hấp dẫn. Nhưng những con số đó gần như
+luôn được báo cáo dưới dạng \emph{mAP tổng} --- và đó chính là điểm mà đề tài này đặt nghi vấn.
+
+Các nút thắt chính mà đề tài phải đối mặt:
+
+\begin{enumerate}[leftmargin=1.5cm]
+\item \textbf{Ràng buộc kép giữa độ chính xác và chi phí triển khai.} Mô hình phải đủ nhẹ để chạy
+trên phần cứng nhúng nhưng vẫn phải đủ chính xác để không bỏ sót biển báo.
+
+\item \textbf{mAP tổng có thể là một chỉ số gây hiểu nhầm.} Nó lấy trung bình trên toàn bộ vật thể
+bất kể kích thước. Nếu phần lớn vật thể trong tập kiểm tra là những trường hợp dễ, một suy giảm
+nghiêm trọng ở nhóm khó có thể bị pha loãng gần như hoàn toàn.
+
+\item \textbf{Vật thể nhỏ.} Biển báo ở xa chỉ chiếm vài chục điểm ảnh trong khung hình, và đây lại
+chính là trường hợp quyết định thời gian phản ứng của xe. Phát hiện vật thể nhỏ vốn là điểm yếu cố
+hữu của các bộ phát hiện hiện đại~\cite{tong2020smallobject}.
+
+\item \textbf{Dữ liệu quy mô vừa và mất cân bằng.} Bộ dữ liệu sử dụng chỉ có 6.012 hộp bao cho 15
+lớp, với tỉ số mất cân bằng giữa lớp phổ biến nhất và lớp hiếm nhất lên tới 35,77
+lần~\cite{johnson2019imbalance}.
+
+\item \textbf{Nguy cơ rò rỉ dữ liệu giữa các tập.} Bộ dữ liệu công khai thường được ghép từ nhiều
+nguồn và có thể chứa ảnh trùng lặp giữa tập huấn luyện và tập kiểm tra, khiến chỉ số bị thổi
+phồng~\cite{barz2020duplicates}.
+\end{enumerate}
+
+\noindent\textbf{Câu hỏi nghiên cứu 1.1} \textit{Chưng cất tri thức từ một mô hình thầy lớn hơn có
+thực sự giúp mô hình học trò nhỏ tốt hơn so với chính nó khi được huấn luyện thông thường, trong
+điều kiện bộ dữ liệu quy mô vừa?}
+
+\noindent\textbf{Câu hỏi nghiên cứu 1.2} \textit{Lượng tử hoá sau huấn luyện đánh đổi những gì
+giữa dung lượng, tốc độ và độ chính xác, và cái giá đó phân bố ra sao trên các nhóm vật thể có kích
+thước khác nhau?}
+
+\noindent\textbf{Câu hỏi nghiên cứu 1.3} \textit{Chỉ số mAP tổng phản ánh đến mức nào năng lực thực
+sự của mô hình, và đặc điểm nào của bộ dữ liệu khiến chỉ số đó có nguy cơ gây hiểu nhầm?}
+
+\section{Mục tiêu đề tài}
+
+Đề tài hướng đến các mục tiêu chính sau:
+
+\begin{itemize}[leftmargin=1.5cm]
+\item Xây dựng một quy trình thực nghiệm tái lập được, trong đó cả năm cấu hình khảo sát được huấn
+luyện và đánh giá trong \emph{cùng một lượt chạy}, trên cùng một tập kiểm tra và cùng một bộ tính
+độ đo, để loại bỏ mọi khác biệt do môi trường.
+
+\item Đánh giá bằng pycocotools trên định dạng COCO nhằm thu được $AP$ tách riêng theo nhóm kích
+thước vật thể, thay vì chỉ báo cáo mAP tổng.
+
+\item Khai báo trước các ngưỡng chấp nhận cho từng giả thuyết, và báo cáo đầy đủ cả những ngưỡng
+không đạt.
+
+\item Phân tích khám phá dữ liệu ở mức đủ sâu để giải thích được kết quả, bao gồm kiểm toán rò rỉ
+giữa các tập.
+
+\item Báo cáo trung thực các kết quả đi ngược giả thuyết ban đầu, kèm phân tích nguyên nhân và các
+yếu tố gây nhiễu chưa kiểm soát được.
+\end{itemize}
+
+\section{Đối tượng và phạm vi nghiên cứu}
+
+\textbf{Đối tượng nghiên cứu:} hiệu quả của hai kỹ thuật nén mô hình --- chưng cất tri thức và
+lượng tử hoá sau huấn luyện --- áp dụng cho bộ phát hiện biển báo giao thông, xét đồng thời trên
+ba trục độ chính xác, tốc độ và dung lượng, trong đó độ chính xác được tách theo nhóm kích thước
+vật thể.
+
+\textbf{Phạm vi nghiên cứu:} đề tài giới hạn ở bộ dữ liệu \textit{pkdarabi/cardetection} với 15 lớp
+gốc, giữ nguyên không ánh xạ lại nhãn. Mô hình thầy là YOLO26s, mô hình học trò là YOLO26n, cả hai
+huấn luyện 50 chu kỳ ở kích thước ảnh 640. Lượng tử hoá được thực hiện qua đường xuất ONNX.
+
+Đề tài \emph{không} bao gồm: thu thập và gán nhãn dữ liệu mới, tìm kiếm siêu tham số tự động, quét
+hệ số chưng cất, khảo sát các kiến trúc phát hiện khác, và triển khai thực tế trên phần cứng nhúng.
+Những giới hạn này được nêu rõ ngay từ đầu vì chúng ảnh hưởng trực tiếp tới cách diễn giải kết quả
+ở Chương~\ref{ch:ket_qua}.
+
+\section{Đóng góp của đề tài}
+
+\begin{enumerate}[leftmargin=1.5cm]
+\item \textbf{Một thiết kế thực nghiệm có đối chứng đúng nghĩa.} Mô hình học trò được huấn luyện
+hai lần với cùng số chu kỳ, cùng hạt ngẫu nhiên, cùng kích thước ảnh --- một lần thông thường và
+một lần có chưng cất --- nên chênh lệch quan sát được quy về đúng biến số cần khảo sát. Kèm theo đó
+là năm ngưỡng chấp nhận khai báo trước khi chạy.
+
+\item \textbf{Bằng chứng định lượng cho thấy mAP tổng che giấu chi phí thật của việc nén mô hình.}
+Lượng tử hoá INT8 làm mAP@0,5 giảm 0,0038 nhưng làm $AP$ trên vật thể nhỏ giảm 0,0247 --- gấp 6,5
+lần. Đây là đóng góp chính của đề tài và nó có hệ quả thực tiễn trực tiếp: mọi quyết định chọn cấu
+hình triển khai chỉ dựa trên mAP tổng đều có nguy cơ sai.
+
+\item \textbf{Một kết quả âm được báo cáo đầy đủ.} Chưng cất tri thức làm giảm độ chính xác so với
+đối chứng. Kết quả này được giữ lại kèm bằng chứng cho thấy cơ chế chưng cất đã thực sự hoạt động,
+và kèm phân tích các điều kiện khiến kỹ thuật không phát huy tác dụng.
+
+\item \textbf{Một phân tích dữ liệu chỉ ra hai vấn đề của bộ dữ liệu công khai được dùng rộng rãi:}
+38,68\% số ảnh là ảnh cắt cận cảnh kiểu GTSRB~\cite{stallkamp2012gtsrb} khiến phân bố kích thước bị
+lưỡng cực, và 10,2\% tập kiểm tra có bản sao trong tập huấn luyện.
+\end{enumerate}
+
+\section{Bố cục báo cáo}
+
+Chương~\ref{ch:gioi_thieu} giới thiệu tổng quan về bài toán, mục tiêu và phạm vi.
+Chương~\ref{ch:co_so} trình bày cơ sở lý thuyết về phát hiện đối tượng một giai đoạn, hệ thống độ
+đo và hai kỹ thuật nén mô hình. Chương~\ref{ch:phuong_phap} mô tả bộ dữ liệu, kết quả phân tích
+khám phá và thiết kế thực nghiệm. Chương~\ref{ch:ket_qua} trình bày và bàn luận kết quả, bao gồm
+phần phân tích lỗi và các kết quả trái với kỳ vọng. Chương~\ref{ch:tong_ket} tổng kết, nêu hạn chế
+và hướng phát triển.

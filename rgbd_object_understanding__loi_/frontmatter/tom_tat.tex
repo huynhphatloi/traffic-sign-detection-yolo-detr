@@ -1,0 +1,42 @@
+% ================= TÓM TẮT =================
+\newpage
+\thispagestyle{plain}
+
+\begin{center}
+    {\bfseries\Large TÓM TẮT}
+\end{center}
+
+\vspace{1cm}
+
+Hiểu một cảnh bàn hoặc cảnh đồ gia dụng lộn xộn là bài toán nền tảng của robot thao tác và các hệ thống kiểm kê tự động. Yêu cầu đặt ra không dừng ở việc gán nhãn phân lớp mà là một mô tả định lượng về cảnh: số lượng vật, kích thước thật của từng vật và quan hệ không gian giữa chúng. Ảnh màu hai chiều đã mất thông tin chiều sâu nên không đáp ứng được yêu cầu về kích thước, còn các bộ phân lớp tập đóng không bao quát được số chủng loại đồ vật gần như vô hạn trong môi trường sinh hoạt. Đề tài xây dựng một hệ thống hoàn chỉnh đi từ ảnh RGB-D tới một đồ thị cảnh có kèm kích thước theo centimet. Ảnh màu đơn thuần đã mất thông tin chiều sâu nên không thể trả lời câu hỏi kích thước thật, còn các bộ phân lớp đóng lại không bao quát được số chủng loại đồ vật gần như vô hạn trong nhà. Đề tài này xây dựng một hệ thống hoàn chỉnh đi từ ảnh RGB-D tới một đồ thị cảnh có kèm kích thước theo centimet.
+
+Hệ thống gồm tám bước: tiền xử lý độ sâu, phân vùng instance class-agnostic bằng YOLOv8-seg, đếm
+đối tượng qua bộ lọc hai tầng, đo kích thước ba chiều bằng hộp bao định hướng trên đám mây điểm,
+nhận diện từ vựng mở bằng CLIP có cơ chế từ chối, tra dải kích thước thật để kiểm tra tính hợp
+lý, hiệu chỉnh tỉ lệ toàn ảnh theo cơ chế bỏ phiếu trung vị, và cuối cùng là suy luận quan hệ
+không gian theo luật. Điểm mấu chốt về mặt phương pháp là phân vùng được giữ hoàn toàn
+class-agnostic, còn việc gọi tên là một tầng tách rời chạy ở thời điểm suy luận, với từ vựng
+sinh trực tiếp từ bảng tri thức kích thước nên hai thành phần không thể lệch nhau.
+
+Thực nghiệm dùng ba nguồn dữ liệu mà mọi nhãn chấm điểm đều có sẵn công khai: bộ OCID chia theo
+cảnh với hạt giống 42 để tránh rò rỉ khung hình liền kề, 200 ảnh COCO val2017 có sẵn mặt nạ và
+tên vật do người gán, và một cảnh tổng hợp có kích thước biết trước dùng làm thí nghiệm kiểm
+soát. Riêng phần hiệu chỉnh tỉ lệ được đánh giá theo thủ tục để-lại-một (leave-one-out): khi
+chấm một vật, hệ số tỉ lệ được ước lượng từ toàn bộ các vật còn lại nên vật đó không góp phần
+sửa chính nó, qua đó phá vỡ tính vòng tròn của cách đánh giá thông thường.
+
+Kết quả cho thấy phân vùng đạt mask mAP50 bằng 0,970 và mAP50--95 bằng 0,778 trên 312 ảnh kiểm
+thử; bộ lọc theo độ sâu giảm sai số đếm trung bình từ 0,695 xuống 0,590 và nâng tỉ lệ đếm đúng
+tuyệt đối từ 60\% lên 68\%. Nhận diện đạt top-1 42,74\% và top-3 71,45\% trên các mặt nạ đã
+khớp, nhưng do tỉ lệ khớp mặt nạ chỉ đạt 30,82\% nên độ chính xác đầu-cuối chỉ còn 13,17\%.
+Ngược với giả thuyết ban đầu, hiệu chỉnh tỉ lệ làm sai số đo \emph{tăng} từ 10,143~cm lên
+12,598~cm trên 249 vật, tương ứng xấu đi 24,2\%; trong khi thí nghiệm kiểm soát lại khẳng định
+bộ ước lượng khôi phục đúng sai lệch tỉ lệ được bơm vào trong phạm vi khoảng 5\%.
+
+Đóng góp chính của đề tài nằm ở một kết luận âm tính thu được từ một thiết kế đánh giá đã loại bỏ tính vòng tròn: bộ ước lượng tỉ lệ đạt bài kiểm soát độ nhạy nhưng không cải thiện phép đo trên dữ liệu giữ lại. Hai nguyên nhân được xác định là giả định "một hệ số cho cả ảnh" không còn được thoả mãn khi hình học tương đối của bản đồ độ sâu đơn mắt bị sai lệch, và tỉ lệ nhận diện thành công chỉ đạt 61,1\% khiến tập phiếu bị nhiễu. Hạn chế
+lớn nhất là chất lượng nhận diện đầu-cuối và việc phần quan hệ không gian mới chỉ có kiểm soát
+tổng hợp chứ chưa có nhãn người gán trên ảnh thật.
+
+\vspace{0.5cm}
+\noindent\textbf{Từ khoá:} RGB-D, phân vùng instance class-agnostic, nhận diện từ vựng mở,
+hiệu chỉnh tỉ lệ, đồ thị cảnh, kết quả âm tính.

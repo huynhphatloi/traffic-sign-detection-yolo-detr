@@ -1,0 +1,128 @@
+\chapter{GIỚI THIỆU TỔNG QUAN}
+\label{ch:gioi_thieu}
+
+\section{Đặt vấn đề}
+
+Xe tự hành và các hệ thống hỗ trợ lái tiên tiến (ADAS) phải hiểu được môi trường giao thông xung
+quanh trước khi có thể ra bất kỳ quyết định điều khiển nào. Trong số các thành phần của bài toán
+nhận thức đó, phát hiện biển báo giao thông giữ một vị trí đặc biệt: biển báo là kênh giao tiếp
+chính thức giữa hạ tầng đường bộ và người lái, và nội dung của nó ràng buộc trực tiếp hành vi hợp
+pháp của phương tiện. Một hệ thống bỏ sót biển giới hạn tốc độ hoặc đọc nhầm đèn tín hiệu không
+chỉ gây khó chịu mà có thể dẫn tới hậu quả về an toàn và pháp lý.
+
+Về mặt kỹ thuật, đây là bài toán phát hiện đối tượng: với mỗi ảnh đầu vào, mô hình phải đồng thời
+\emph{định vị} từng biển báo bằng một hộp bao và \emph{phân loại} nó vào đúng chủng loại. Điều này
+khó hơn hẳn bài toán phân lớp ảnh, nơi đầu ra chỉ là một nhãn duy nhất cho cả bức ảnh. Lịch sử
+phát triển của lĩnh vực đi qua hai dòng lớn. Dòng hai giai đoạn, tiêu biểu là Faster
+R-CNN~\cite{ren2017fasterrcnn}, tách bài toán thành bước đề xuất vùng rồi mới phân loại và tinh
+chỉnh hộp bao; độ chính xác cao nhưng chi phí tính toán lớn. Dòng một giai đoạn, khởi đầu từ
+YOLO~\cite{redmon2016yolo} và SSD~\cite{liu2016ssd}, dự đoán trực tiếp hộp bao và lớp trên bản đồ
+đặc trưng chỉ trong một lượt truyền xuôi, đổi một phần độ chính xác lấy tốc độ đủ cho ứng dụng
+thời gian thực.
+
+Năm 2020, DETR~\cite{carion2020detr} mở ra một hướng thứ ba bằng cách áp dụng kiến trúc
+transformer~\cite{vaswani2017attention} vào phát hiện đối tượng. DETR loại bỏ hoàn toàn hộp neo
+và bước hậu xử lý NMS, thay bằng một tập truy vấn đối tượng học được và phép gán song ánh
+Hungarian~\cite{kuhn1955hungarian} giữa dự đoán và nhãn thật. Thiết kế này thanh lịch về mặt khái
+niệm, nhưng kèm theo một cái giá ít được nhấn mạnh trong các bài trình bày phổ thông: DETR hội tụ
+rất chậm, bản gốc cần khoảng 300 đến 500 chu kỳ huấn luyện trên bộ dữ liệu COCO quy
+mô lớn~\cite{lin2014coco}. Đây chính là điểm mà một đồ án học phần với ngân sách GPU hạn chế sẽ
+va phải.
+
+Các nút thắt chính mà đề tài phải đối mặt:
+
+\begin{enumerate}[leftmargin=1.5cm]
+\item \textbf{Ràng buộc kép giữa độ chính xác và chi phí triển khai.} Mô hình phải chạy được trên
+phần cứng nhúng gắn trên xe, nơi dung lượng bộ nhớ và ngân sách năng lượng đều bị giới hạn, nhưng
+vẫn phải đủ chính xác để không bỏ sót biển báo.
+
+\item \textbf{Dữ liệu quy mô vừa và mất cân bằng.} Bộ dữ liệu sử dụng chỉ có 6.012 hộp bao cho 15
+lớp, với tỉ số mất cân bằng giữa lớp phổ biến nhất và lớp hiếm nhất lên tới 35,77 lần. Mất cân
+bằng lớp là một vấn đề đã được ghi nhận rộng rãi trong học sâu~\cite{johnson2019imbalance} và ảnh
+hưởng trực tiếp tới các lớp thiểu số.
+
+\item \textbf{Vật thể nhỏ.} Biển báo ở xa chỉ chiếm vài chục điểm ảnh trong khung hình. Phát hiện
+vật thể nhỏ là điểm yếu cố hữu của các bộ phát hiện hiện đại~\cite{tong2020smallobject}, và mức
+độ nghiêm trọng của nó phụ thuộc mạnh vào phân bố kích thước trong dữ liệu huấn luyện.
+
+\item \textbf{So sánh công bằng giữa hai hệ sinh thái khác nhau.} YOLO và DETR đến từ hai thư viện
+khác nhau, dùng hai định dạng nhãn khác nhau và hai cách tính mAP khác nhau. Nếu không kiểm soát,
+phần chênh lệch do công cụ đo sẽ lẫn vào phần chênh lệch do mô hình.
+\end{enumerate}
+
+\noindent\textbf{Câu hỏi nghiên cứu 1.1} \textit{Với một bộ dữ liệu biển báo quy mô vừa và ngân
+sách huấn luyện hạn chế, kiến trúc một giai đoạn dựa trên tích chập và kiến trúc transformer dự
+đoán theo tập hợp cho kết quả khác nhau như thế nào về độ chính xác, tốc độ và dung lượng?}
+
+\noindent\textbf{Câu hỏi nghiên cứu 1.2} \textit{Có kiến trúc nhẹ nào thay thế được mô hình nền
+mà không đánh đổi độ chính xác, và các kỹ thuật nén mô hình như lượng tử hoá hay chưng cất tri
+thức mang lại lợi ích gì trong bối cảnh này?}
+
+\noindent\textbf{Câu hỏi nghiên cứu 1.3} \textit{Chỉ số mAP đo trên tập kiểm tra phản ánh đến mức
+nào năng lực thực tế của mô hình khi gặp cảnh đường phố thật, và đặc điểm nào của bộ dữ liệu giải
+thích khoảng cách đó?}
+
+\section{Mục tiêu đề tài}
+
+Đề tài hướng đến các mục tiêu chính sau:
+
+\begin{itemize}[leftmargin=1.5cm]
+\item Xây dựng một quy trình xử lý hoàn chỉnh và tái lập được, đi từ dữ liệu thô tới mô hình đã
+huấn luyện và bảng số liệu đánh giá, trong đó mọi bước đều tồn tại dưới dạng mô-đun độc lập chạy
+được từ dòng lệnh và có kiểm thử tự động.
+
+\item Thiết lập một mô hình nền đáng tin cậy bằng YOLOv8n và một mô hình đối chứng bằng
+DETR-ResNet50, đo trên cùng một tập kiểm tra với cùng một hạt giống ngẫu nhiên.
+
+\item Khảo sát ba kiến trúc nhẹ thay thế và hai nhóm kỹ thuật nén mô hình, nhằm trả lời câu hỏi
+liệu có thể giảm chi phí triển khai mà không mất độ chính xác.
+
+\item Phân tích khám phá dữ liệu ở mức đủ sâu để giải thích được kết quả, thay vì chỉ báo cáo con
+số cuối cùng.
+
+\item Báo cáo trung thực cả những kết quả đi ngược giả thuyết ban đầu, kèm theo phân tích nguyên
+nhân.
+\end{itemize}
+
+\section{Đối tượng và phạm vi nghiên cứu}
+
+\textbf{Đối tượng nghiên cứu:} các mô hình học sâu phát hiện đối tượng áp dụng cho biển báo giao
+thông, xét đồng thời trên ba trục độ chính xác, tốc độ suy luận và dung lượng mô hình.
+
+\textbf{Phạm vi nghiên cứu:} đề tài giới hạn ở bộ dữ liệu \textit{pkdarabi/cardetection} với 15
+lớp gốc, giữ nguyên không ánh xạ lại nhãn. Việc huấn luyện được thực hiện trên môi trường Google
+Colab với GPU đơn, ngân sách 30 chu kỳ cho nhánh YOLO và 10 chu kỳ cho nhánh DETR. Đề tài
+\emph{không} bao gồm: thu thập và gán nhãn dữ liệu mới, tinh chỉnh siêu tham số bằng tìm kiếm tự
+động, huấn luyện DETR tới hội tụ hoàn toàn, và triển khai thực tế trên phần cứng nhúng. Những
+giới hạn này được nêu rõ ngay từ đầu vì chúng ảnh hưởng trực tiếp tới cách diễn giải kết quả ở
+Chương~\ref{ch:ket_qua}.
+
+\section{Đóng góp của đề tài}
+
+\begin{enumerate}[leftmargin=1.5cm]
+\item Một quy trình tái lập được cho bài toán phát hiện biển báo, trong đó toàn bộ bộ sinh số ngẫu
+nhiên được gieo hạt tập trung, mọi đường dẫn được quản lý ở một nơi duy nhất, và bộ kiểm thử tự
+động gồm 43 trường hợp chạy trên CPU trong khoảng một giây.
+
+\item Một bảng so sánh bốn nhóm thực nghiệm trên cùng một tập kiểm tra: mô hình nền, kiến trúc
+nhẹ, lượng tử hoá và chưng cất tri thức --- cho phép đọc được sự đánh đổi giữa ba trục thay vì chỉ
+một con số mAP.
+
+\item Một phân tích thành phần bộ dữ liệu chỉ ra rằng 38,7\% số ảnh là ảnh cắt cận cảnh kiểu
+GTSRB~\cite{stallkamp2012gtsrb}, khiến phân bố kích thước vật thể trở nên lưỡng cực. Phát hiện này
+giải thích được khoảng cách giữa chỉ số trên tập kiểm tra và hành vi quan sát được trên video
+đường phố thực tế, và nó liên hệ trực tiếp tới hiện tượng thiên lệch bộ dữ liệu đã được mô tả
+trong tài liệu~\cite{torralba2011bias}.
+
+\item Hai kết quả âm được báo cáo đầy đủ thay vì lược bỏ: chưng cất tri thức làm giảm độ chính xác
+so với đối chứng, và lượng tử hoá INT8 làm giảm tốc độ thay vì tăng trên môi trường thử nghiệm.
+\end{enumerate}
+
+\section{Bố cục báo cáo}
+
+Chương~\ref{ch:gioi_thieu} giới thiệu tổng quan về bài toán, mục tiêu và phạm vi.
+Chương~\ref{ch:co_so} trình bày cơ sở lý thuyết về các họ kiến trúc phát hiện đối tượng, các hàm
+mất mát và hệ thống độ đo. Chương~\ref{ch:phuong_phap} mô tả bộ dữ liệu, kết quả phân tích khám
+phá, kiến trúc quy trình và thiết kế của bốn nhóm thực nghiệm. Chương~\ref{ch:ket_qua} trình bày
+và bàn luận kết quả, bao gồm phần phân tích lỗi và các kết quả trái với kỳ vọng.
+Chương~\ref{ch:tong_ket} tổng kết, nêu hạn chế và hướng phát triển.

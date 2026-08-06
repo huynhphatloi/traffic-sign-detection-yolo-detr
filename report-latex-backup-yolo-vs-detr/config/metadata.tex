@@ -1,0 +1,49 @@
+% =========================================================
+%  ***  CHỈ CẦN SỬA DUY NHẤT TỆP NÀY CHO MỖI ĐỀ TÀI MỚI  ***
+%
+%  Mọi trang bìa, lời cam đoan, header PDF... đều lấy thông tin từ đây,
+%  nên không bao giờ phải sửa cùng một tên đề tài ở nhiều chỗ.
+% =========================================================
+
+% ---------- Trường / khoa ----------
+\newcommand{\university}{TRƯỜNG ĐẠI HỌC SƯ PHẠM THÀNH PHỐ HỒ CHÍ MINH}
+\newcommand{\ministry}{BỘ GIÁO DỤC VÀ ĐÀO TẠO}
+\newcommand{\faculty}{Khoa Công nghệ Thông tin}
+
+% ---------- Loại bài & học phần ----------
+\newcommand{\doctype}{TIỂU LUẬN HỌC PHẦN}
+% >>> KIỂM TRA LẠI TÊN HỌC PHẦN TRƯỚC KHI NỘP <<<
+\newcommand{\coursename}{HỌC SÂU}
+\newcommand{\major}{Khoa học máy tính}
+\newcommand{\courseyear}{36 (2025 -- 2027)}
+
+% ---------- Đề tài ----------
+% \projecttitle       : một dòng liền — dùng trong lời cam đoan, lời cảm ơn.
+% \projecttitlebreak  : có \\ để ngắt dòng cho ĐẸP trên trang bìa.
+% \projecttitleascii  : KHÔNG DẤU — chỉ dùng cho metadata PDF (tránh lỗi font).
+\newcommand{\projecttitle}{PHÁT HIỆN BIỂN BÁO GIAO THÔNG CHO XE TỰ HÀNH: SO SÁNH YOLO VỚI DETR VÀ KHẢO SÁT KIẾN TRÚC NHẸ, LƯỢNG TỬ HOÁ, CHƯNG CẤT TRI THỨC}
+\newcommand{\projecttitlebreak}{PHÁT HIỆN BIỂN BÁO GIAO THÔNG CHO XE TỰ HÀNH: \\ SO SÁNH YOLO VỚI DETR VÀ KHẢO SÁT \\ KIẾN TRÚC NHẸ, LƯỢNG TỬ HOÁ \\ VÀ CHƯNG CẤT TRI THỨC}
+\newcommand{\projecttitleascii}{Phat hien bien bao giao thong cho xe tu hanh}
+
+% ---------- Người thực hiện ----------
+% >>> KIỂM TRA LẠI TRƯỚC KHI NỘP <<<
+\newcommand{\studentname}{Huỳnh Phát Lợi}
+\newcommand{\studentnameascii}{Huynh Phat Loi}
+\newcommand{\studentid}{KHMT836016}
+% >>> ĐIỀN TÊN GIẢNG VIÊN TRƯỚC KHI NỘP <<<
+% Để trống thì trang bìa vẫn in dòng "Giảng viên giảng dạy:" với phần tên bỏ trống.
+\newcommand{\lecturer}{\dotfill}
+
+% ---------- Thời gian & địa điểm ----------
+\newcommand{\placename}{Thành phố Hồ Chí Minh}
+\newcommand{\submonth}{08}
+\newcommand{\subyear}{2026}
+\newcommand{\subday}{06}
+% Chuỗi ghép sẵn để dùng lại ở nhiều trang
+\newcommand{\placedate}{\placename, tháng \submonth{} năm \subyear}
+\newcommand{\placefulldate}{\placename, ngày \subday{} tháng \submonth{} năm \subyear}
+
+% ---------- Tuỳ chọn hiển thị ----------
+% Đặt \showsignaturetrue nếu có tệp figures/chuky.png muốn chèn vào lời cam đoan.
+\newif\ifshowsignature
+\showsignaturefalse
