@@ -251,6 +251,106 @@ nhớ hơn là khái quát hoá. Mọi con số mAP trong báo cáo này vì v�
 một tập kiểm tra --- nên các phép so sánh tương đối ở Bảng~\ref{tab:delta} vẫn giữ nguyên giá trị.
 Cái bị ảnh hưởng là giá trị tuyệt đối, không phải thứ tự xếp hạng.
 
+Lập luận vừa nêu là một suy đoán hợp lý, nhưng suy đoán thì kiểm chứng được. Mục tiếp theo làm đúng
+việc đó.
+
+\subsection{Đo lại trên tập kiểm tra sạch}
+\label{sec:tap_sach}
+
+Toàn bộ 638 ảnh được đánh giá lại bằng mô-đun \texttt{src/evaluation/coco\_eval.py} chạy tại chỗ
+trên CPU, độc lập với sổ tay đã chạy trên Kaggle. Phép chạy lại này phục vụ hai mục đích: xác minh
+rằng các con số trong Bảng~\ref{tab:tongquan} tái lập được ngoài môi trường gốc, và cung cấp cơ sở
+để đo riêng trên tập con không bị rò rỉ.
+
+Về mục đích thứ nhất, ba cấu hình PyTorch tái lập \emph{khớp đến bốn chữ số thập phân}: mô hình thầy
+0,9520, đối chứng 0,9348, chưng cất 0,9014 --- đúng bằng giá trị trong bảng tổng quan. $AP$ theo
+nhóm kích thước cũng khớp. Hai bản ONNX là ngoại lệ và cần nói rõ: bản FP32 không có sẵn tại chỗ nên
+không đo lại được, còn bản INT8 cho mAP@0,5 bằng 0,9107 thay vì 0,9041, lệch 0,0066. Sai lệch này
+đến từ việc môi trường thực thi ONNX ở hai nơi dùng nhân tính toán khác nhau cho phép nhân số
+nguyên. Hệ quả là \emph{phép so sánh INT8 với FP32 chưa được tái lập độc lập}; nó vẫn chỉ dựa trên
+một lần đo duy nhất trong sổ tay.
+
+\begin{table}[H]
+\centering
+\caption[Đối chiếu tập kiểm tra đầy đủ và tập kiểm tra sạch]{Đối chiếu tập kiểm tra đầy đủ và tập
+kiểm tra sạch. Mọi ô đều đo lại tại chỗ. Riêng dòng INT8, cột 638 ảnh ghi 0,9107 chứ không phải
+0,9041 như Bảng~\ref{tab:tongquan}, vì hai môi trường thực thi ONNX khác nhau --- xem đoạn ngay
+trên}
+\label{tab:tapsach}
+\footnotesize
+\begin{tabular}{lrrrrrr}
+\toprule
+& \multicolumn{2}{c}{\textbf{mAP@0,5}} & \multicolumn{2}{c}{\textbf{$AP$ nhỏ}} & \multicolumn{2}{c}{\textbf{$AP$ lớn}} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+\textbf{Cấu hình} & 638 ảnh & 573 sạch & 638 ảnh & 573 sạch & 638 ảnh & 573 sạch \\
+\midrule
+YOLO26s (thầy)    & 0,9520 & 0,9643 & 0,6164 & 0,6099 & 0,8591 & 0,8599 \\
+YOLO26n đối chứng & 0,9348 & 0,9498 & 0,5477 & 0,5056 & 0,8625 & 0,8625 \\
+YOLO26n chưng cất & 0,9014 & 0,9368 & 0,4857 & 0,4709 & 0,8518 & 0,8522 \\
+ONNX INT8         & 0,9107 & 0,9333 & 0,4413 & 0,4381 & 0,8437 & 0,8436 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Kết quả đi ngược trực giác ở cột đầu: bỏ 65 ảnh mà mô hình đã \emph{nhìn thấy khi huấn luyện} lại
+làm mAP@0,5 \textbf{tăng} ở cả bốn cấu hình. Đồng thời $AP$ trên vật thể nhỏ \textbf{giảm} ở cả bốn.
+Hai chiều ngược nhau này cần một lời giải thích, và lời giải thích nằm ở chỗ 65 ảnh đó chứa gì.
+
+\begin{table}[H]
+\centering
+\caption{Phân bố nhóm kích thước của hộp bao trong phần rò rỉ so với phần sạch}
+\label{tab:rori_kichthuoc}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Phần} & \textbf{Nhỏ} & \textbf{Vừa} & \textbf{Lớn} & \textbf{Tỉ lệ nhóm nhỏ} \\
+\midrule
+65 ảnh rò rỉ & 72  & 7   & 22  & \textbf{71,3\%} \\
+573 ảnh sạch & 154 & 163 & 352 & 23,0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:rori_kichthuoc} giải thích trọn vẹn cả hai chiều. Rò rỉ \emph{không} phân bố đều: nó
+tập trung gần như hoàn toàn vào nhóm vật thể nhỏ. Trong 101 hộp bao thuộc phần rò rỉ có tới 72 hộp
+nhỏ, chiếm 71,3\%, trong khi ở phần sạch nhóm nhỏ chỉ chiếm 23,0\%. Nói cách khác, 72 trong tổng số
+226 hộp nhỏ của tập kiểm tra --- gần một phần ba --- là những hộp mà mô hình đã gặp lúc huấn luyện.
+
+Từ đó, việc loại 65 ảnh này gây ra hai tác động cùng lúc. Thứ nhất, phần dữ liệu bị loại là phần
+\emph{khó nhất}, nên tập còn lại dễ hơn và mAP tổng tăng. Thứ hai, đúng những hộp nhỏ được ghi nhớ
+bị lấy đi, nên $AP$ trên nhóm nhỏ mất phần điểm vốn đến từ trí nhớ chứ không từ khả năng khái quát
+hoá --- và giảm.
+
+Điều này buộc phải sửa lại một câu ở mục trước. Nhận định ``rò rỉ ảnh hưởng như nhau tới cả năm cấu
+hình'' đúng ở mức thô nhưng \emph{không} đúng ở mức chi tiết: nó ảnh hưởng nặng hơn hẳn tới đúng chỉ
+số mà báo cáo này quan tâm nhất. Mức sụt của $AP$ nhỏ khi chuyển sang tập sạch trải rất rộng giữa
+các cấu hình --- mô hình thầy gần như không đổi ($-0{,}0065$) trong khi mô hình đối chứng mất nhiều
+nhất ($-0{,}0421$).
+
+Câu hỏi thực sự quan trọng là: luận điểm trung tâm của báo cáo còn đứng vững sau khi bỏ phần rò rỉ
+không? Câu trả lời là \emph{có}, và còn mạnh hơn.
+
+\begin{table}[H]
+\centering
+\caption{Khoảng cách giữa đối chứng và chưng cất, đo trên hai tập}
+\label{tab:tapsach_kd}
+\small
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Tập đánh giá} & \textbf{Sụt mAP@0,5} & \textbf{Sụt $AP$ nhỏ} & \textbf{Tỉ số} \\
+\midrule
+638 ảnh (có rò rỉ) & 0,0334 & 0,0620 & 1,85$\times$ \\
+573 ảnh sạch       & 0,0131 & 0,0347 & \textbf{2,66$\times$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Trên dữ liệu sạch, chi phí thật của phép chưng cất rơi vào nhóm vật thể nhỏ với mức lớn gấp
+\textbf{2,66 lần} mức mà mAP tổng báo cáo, so với 1,85 lần khi còn rò rỉ. Nghĩa là hiện tượng ``mAP
+tổng che giấu chi phí thật'' không phải một tạo tác của dữ liệu bẩn --- loại dữ liệu bẩn đi thì nó
+rõ hơn. Đây là bằng chứng mạnh hơn hẳn phiên bản trước, vì nó loại được phản biện hiển nhiên nhất mà
+người đọc có thể đưa ra.
+
 \section{Kiểm chứng trên video đường thật}
 \label{sec:video}
 
@@ -294,10 +394,10 @@ mỗi cấu hình:
 hình, rồi gộp bằng NMS theo từng lớp.
 \end{itemize}
 
-Cần nói rõ: phép kiểm chứng này dùng trọng số của mô hình nền YOLOv8n trong ứng dụng trình diễn,
-\emph{không phải} các mô hình YOLO26 ở những mục trên. Nó vì vậy không so sánh được trực tiếp với
-Bảng~\ref{tab:tongquan}; mục đích của nó là kiểm chứng một \emph{cơ chế}, không phải xếp hạng mô
-hình.
+Phép kiểm chứng dùng \emph{chính} mô hình học trò được chưng cất --- cấu hình trung tâm của báo
+cáo --- nên kết quả ở mục này đọc được liền mạch với Bảng~\ref{tab:tongquan}. Mục đích vẫn là kiểm
+chứng một \emph{cơ chế} chứ không xếp hạng mô hình, nhưng việc dùng cùng một mô hình loại bỏ được
+một biến số.
 
 \subsection{Kết quả}
 
@@ -310,15 +410,15 @@ hình.
 \toprule
 \textbf{Cấu hình} & \textbf{Số phát hiện} & \textbf{Trên mỗi khung} & \textbf{Tin cậy TB} & \textbf{Cạnh trung vị} & \textbf{Số lớp} \\
 \midrule
-A --- 640, conf 0,35   & 185 & 2,13 & 0,618 & 4,49\% & 13 \\
-B --- 1280, conf 0,20  & 431 & 4,95 & 0,633 & 3,00\% & 14 \\
-C --- 1280 + lát cắt   & \textbf{644} & \textbf{7,40} & 0,616 & \textbf{2,84\%} & 14 \\
+A --- 640, conf 0,35   & 124 & 1,43 & 0,592 & 4,66\% & 12 \\
+B --- 1280, conf 0,20  & 328 & 3,77 & 0,540 & 3,28\% & 14 \\
+C --- 1280 + lát cắt   & \textbf{425} & \textbf{4,89} & 0,582 & \textbf{3,29\%} & 14 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Số phát hiện tăng 2,3 lần từ A sang B và 3,5 lần từ A sang C. Nhưng con số quan trọng hơn nằm ở cột
-cuối: \textbf{cạnh trung vị của vật thể được phát hiện giảm} từ 4,49\% xuống 2,84\% cạnh khung hình.
+Số phát hiện tăng 2,6 lần từ A sang B và 3,4 lần từ A sang C. Nhưng con số quan trọng hơn nằm ở cột
+cuối: \textbf{cạnh trung vị của vật thể được phát hiện giảm} từ 4,66\% xuống 3,29\% cạnh khung hình.
 Nói cách khác, các cấu hình mới không chỉ tìm được \emph{nhiều} biển hơn mà còn tìm được biển
 \emph{nhỏ hơn}.
 
@@ -342,18 +442,19 @@ Bảng~\ref{tab:video_bucket} là kết quả then chốt của mục này.
 \toprule
 \textbf{Nhóm cạnh hộp} & \textbf{A} & \textbf{B} & \textbf{C} & \textbf{Tăng A$\rightarrow$C} \\
 \midrule
-Rất nhỏ ($<2\%$)      & 34  & 134 & 206 & \textbf{6,1$\times$} \\
-Nhỏ ($2$--$4\%$)      & 39  & 159 & 261 & \textbf{6,7$\times$} \\
-Vừa ($4$--$8\%$)      & 107 & 131 & 155 & 1,4$\times$ \\
-Lớn ($\ge 8\%$)       & 5   & 7   & 22  & --- \\
+Rất nhỏ ($<2\%$)      & 8  & 82  & 104 & \textbf{13,0$\times$} \\
+Nhỏ ($2$--$4\%$)      & 40 & 122 & 171 & \textbf{4,3$\times$} \\
+Vừa ($4$--$8\%$)      & 61 & 114 & 142 & 2,3$\times$ \\
+Lớn ($\ge 8\%$)       & 15 & 10  & 8   & \textbf{0,5$\times$} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\hopnhanmanh{Nhóm vật thể vừa chỉ tăng \textbf{1,4 lần}, trong khi hai nhóm nhỏ tăng \textbf{6,1 và
-6,7 lần}. Mức tăng hoàn toàn không đồng đều, và nó dồn đúng vào nhóm mà lý thuyết ở
-Mục~\ref{sec:vat_the_nho} đã dự đoán. Đây là kiểm chứng độc lập cho luận điểm trung tâm của báo
-cáo, thu được trên dữ liệu ngoài phân bố và không cần nhãn thật.}
+\hopnhanmanh{Tỉ lệ tăng \emph{giảm đơn điệu} theo kích thước vật thể: 13,0 --- 4,3 --- 2,3 ---
+0,5. Nhóm nhỏ nhất tăng gấp mười ba lần, còn nhóm lớn nhất thậm chí \emph{giảm} một nửa. Đây không
+phải một mức tăng đồng đều bị nhiễu làm lệch, mà là một gradient sạch theo đúng chiều mà lý thuyết ở
+Mục~\ref{sec:vat_the_nho} dự đoán. Kiểm chứng độc lập này thu được trên dữ liệu ngoài phân bố và
+không cần nhãn thật.}
 
 \subsection{Các phát hiện thêm có phải dương tính giả không?}
 
@@ -361,15 +462,17 @@ cáo, thu được trên dữ liệu ngoài phân bố và không cần nhãn th
 0,35 xuống 0,20, một phần các phát hiện thêm có thể chỉ là nhiễu. Không có nhãn thật thì không thể
 loại trừ khả năng này hoàn toàn. Tuy nhiên có hai lập luận đáng cân nhắc.
 
-\textbf{Thứ nhất, độ tin cậy trung bình không sụt.} Nếu các phát hiện thêm chủ yếu là nhiễu ở gần
-ngưỡng, trung bình phải kéo về phía 0,20. Thực tế nó giữ nguyên và thậm chí nhích lên: 0,618 ở cấu
-hình A so với 0,633 ở cấu hình B, dù sàn ngưỡng đã thấp hơn 15 điểm phần trăm. Điều này hàm ý phần
-lớn phát hiện mới có điểm cao, tức mô hình \emph{thực sự} nhìn thấy chúng chứ không đoán mò.
+\textbf{Thứ nhất, độ tin cậy trung bình sụt ít hơn nhiều so với sàn ngưỡng.} Sàn hạ 15 điểm phần
+trăm (từ 0,35 xuống 0,20) nhưng trung bình chỉ giảm 5,2 điểm, từ 0,592 xuống 0,540, rồi hồi lên
+0,582 ở cấu hình C. Nếu phần lớn phát hiện thêm là nhiễu nằm sát sàn, trung bình phải bị kéo về phía
+0,20 mạnh hơn nhiều. Cần thừa nhận đây là lập luận yếu hơn so với trường hợp trung bình không sụt
+chút nào.
 
-\textbf{Thứ hai, tính chọn lọc theo kích thước là chữ ký của tín hiệu thật.} Nhiễu do hạ ngưỡng sẽ
-phân bố tương đối đều theo kích thước. Ở đây nhóm vừa gần như đứng yên trong khi nhóm nhỏ tăng gấp
-sáu lần --- đúng dạng phân bố mà cơ chế ``vật thể nhỏ mất chi tiết khi ảnh bị co'' dự đoán, và không
-phải dạng mà nhiễu ngẫu nhiên tạo ra.
+\textbf{Thứ hai --- và đây mới là lập luận chính --- gradient theo kích thước là chữ ký của tín hiệu
+thật.} Nhiễu do hạ ngưỡng sẽ phân bố tương đối đều theo kích thước, hoặc cùng lắm là hơi lệch. Ở đây
+tỉ lệ tăng giảm đơn điệu qua cả bốn nhóm và nhóm lớn nhất còn \emph{giảm} --- một phân bố mà nhiễu
+ngẫu nhiên không tạo ra được. Việc vật thể lớn giảm cũng hợp lý về mặt cơ chế: ở độ phân giải cao
+hơn, một biển gần bị NMS gộp chính xác hơn thay vì sinh nhiều hộp chồng lấn.
 
 Dù vậy, kết luận đúng mực vẫn là: \emph{dữ liệu quan sát được nhất quán với giả thuyết vật thể nhỏ},
 chứ chưa phải bằng chứng dứt điểm. Muốn khẳng định chắc chắn phải gán nhãn thủ công một tập khung
@@ -392,17 +495,14 @@ hình và tính $AP$ thật --- việc này được đưa vào hướng phát t
 \label{fig:video_frame}
 \end{figure}
 
-Hình~\ref{fig:video_frame} minh hoạ rõ hiện tượng. Cụm biển ở gần bên phải khung hình được phát hiện
-với độ tin cậy rất cao (0,94 đến 0,97) ở cả hai cấu hình --- đây là chế độ ``biển lớn'' mà mô hình đã
-được dạy rất kỹ, đúng như phân tích thành phần dữ liệu ở Mục~\ref{sec:thanhphan} đã chỉ ra. Ngược
-lại, cụm biển ở xa giữa khung hình chỉ xuất hiện ở cấu hình B và với độ tin cậy thấp hơn hẳn (0,23
-đến 0,43). Khoảng cách về độ tin cậy giữa hai nhóm --- hơn gấp đôi --- cho thấy mô hình ``chắc chắn''
-với biển gần và ``lưỡng lự'' với biển xa, dù cả hai đều là biển thật.
+Hình~\ref{fig:video_frame} minh hoạ rõ hiện tượng: trên cùng một khung hình, cấu hình A chỉ tìm
+được 1 biển trong khi cấu hình B tìm được 8. Chênh lệch tám lần trên một khung hình đơn lẻ mạnh hơn
+hẳn so với mức trung bình 2,6 lần của toàn bộ tập, cho thấy khung hình này thuộc đúng chế độ mà mô
+hình yếu nhất --- nhiều biển ở xa cùng lúc.
 
-Một quan sát nữa đáng ghi nhận: 14 trong số 15 lớp xuất hiện trong kết quả, và lớp được phát hiện
-nhiều nhất là \textit{Red Light} với 110 lần ở cấu hình B. Tuy nhiên đây cũng là lớp có nhiều khả
-năng bị dương tính giả nhất trên cảnh đường cao tốc, nơi hầu như không có đèn tín hiệu --- một dấu
-hiệu nữa cho thấy cần nhãn thật trước khi kết luận về độ chính xác.
+Cần lưu ý 14 trong số 15 lớp xuất hiện trong kết quả. Trên cảnh đường cao tốc, nơi hầu như không có
+đèn tín hiệu, việc lớp đèn vẫn được phát hiện là một dấu hiệu nữa cho thấy cần nhãn thật trước khi
+kết luận về độ chính xác.
 
 \section{Bàn luận}
 

@@ -1,4 +1,7 @@
-"""Tests for path helpers, the annotation drawer, and the comparison assembler."""
+"""Kiểm thử path helper, bộ vẽ chú thích và đăng ký mô hình.
+
+Hai test của compare_models đã được gỡ: mô-đun đó thuộc giai đoạn giữa kỳ và đã
+chuyển sang mid-work/. Thay vào đó là test cho đăng ký MODELS của cuối kỳ."""
 from __future__ import annotations
 
 import json
@@ -8,7 +11,6 @@ import numpy as np
 
 from src.utils import paths as P
 from src.data import visualize_annotations as viz
-from src.evaluation import compare_models as cmp
 
 
 # ── paths ─────────────────────────────────────────────────────────────────────
@@ -51,23 +53,25 @@ def test_draw_boxes_unknown_class_falls_back_to_id():
     viz.draw_boxes(img, [(7, 0.5, 0.5, 0.2, 0.2)], {})
 
 
-# ── compare_models ──────────────────────────────────────────────────────────────
-def test_compare_reads_both_metrics(tmp_path: Path):
-    (tmp_path / "yolo_baseline.json").write_text(json.dumps({
-        "model": "YOLO", "map50": 0.8, "map50_95": 0.5,
-        "precision": 0.9, "recall": 0.7, "fps": 120, "latency_ms": 8.3,
-        "model_size_mb": 6.0, "device": "cuda",
-    }))
-    (tmp_path / "detr_baseline.json").write_text(json.dumps({
-        "model": "DETR", "map50": 0.7, "map50_95": 0.45,
-        "fps": 20, "latency_ms": 50.0, "model_size_mb": 160.0, "device": "cuda",
-    }))
-    df = cmp.compare(tmp_path)
-    assert len(df) == 2
-    assert set(df["model"]) == {"YOLO", "DETR"}
-    assert "mAP@0.5" in df.columns
+# ── đăng ký mô hình ─────────────────────────────────────────────────────────
 
 
-def test_compare_missing_files_returns_empty(tmp_path: Path):
-    df = cmp.compare(tmp_path)
-    assert df.empty
+# ── đăng ký mô hình của giai đoạn cuối kỳ ────────────────────────────────────
+def test_models_registry_has_four_configs():
+    """MODELS phải khai báo đủ bốn cấu hình mà báo cáo trình bày."""
+    assert set(P.MODELS) == {"teacher", "student_baseline", "student_kd", "student_kd_int8"}
+
+
+def test_models_registry_points_into_yolo26_dir():
+    for name, path in P.MODELS.items():
+        assert path.parent == P.WEIGHTS_YOLO26, f"{name} không nằm trong weights/yolo26"
+
+
+def test_no_midterm_weight_constants_remain():
+    """Regression: hằng số trọng số YOLOv8/DETR phải biến mất khỏi paths.
+
+    Chúng thuộc giai đoạn giữa kỳ, đã chuyển sang mid-work/. Nếu còn sót, một
+    mô-đun nào đó vẫn đang trỏ vào cây thư mục cũ.
+    """
+    assert not hasattr(P, "WEIGHTS_YOLO")
+    assert not hasattr(P, "WEIGHTS_DETR")

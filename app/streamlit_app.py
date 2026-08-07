@@ -57,52 +57,26 @@ def latest_output_dir() -> Path | None:
     output_root = REPO_ROOT / "outputs"
     if not output_root.exists():
         return None
-
-    candidates = [
-        path
-        for path in output_root.iterdir()
-        if path.is_dir() and (path / "weights" / "yolo" / "yolo_baseline" / "best.pt").exists()
-    ]
+    candidates = [p for p in output_root.iterdir() if p.is_dir()]
     if not candidates:
         return None
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
-
-
-def latest_trained_weights() -> Path | None:
-    output_root = REPO_ROOT / "outputs"
-    if not output_root.exists():
-        return None
-
-    patterns = [
-        "*/weights/best.pt",
-        "*/weights/yolo/yolov8n_cbam_attention/best.pt",
-        "*/weights/yolo/yolo_baseline/best.pt",
-    ]
-    candidates: list[Path] = []
-    for pattern in patterns:
-        candidates.extend(path for path in output_root.glob(pattern) if path.is_file())
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
+    return max(candidates, key=lambda p: (p.stat().st_mtime, p.name))
 
 
 def resolve_default_weights() -> Path:
+    """Mô hình dùng cho demo: học trò được chưng cất — cấu hình chính của báo cáo.
+
+    Trọng số YOLOv8n của giai đoạn giữa kỳ đã chuyển sang mid-work/ và không còn
+    được tham chiếu ở đây.
+    """
     override = os.environ.get("TSD_YOLO_WEIGHTS")
     if override:
         return Path(override).expanduser().resolve()
-
-    latest_weights = latest_trained_weights()
-    if latest_weights is not None:
-        return latest_weights
-
-    return REPO_ROOT / "weights" / "yolo" / "yolo_baseline" / "best.pt"
+    return REPO_ROOT / "weights" / "yolo26" / "student_kd_yolo26n.pt"
 
 
 def resolve_default_metrics() -> Path:
-    latest = latest_output_dir()
-    if latest is not None:
-        return latest / "results" / "metrics" / "yolo_baseline.json"
-    return REPO_ROOT / "results" / "metrics" / "yolo_baseline.json"
+    return REPO_ROOT / "results" / "metrics" / "student_kd.json"
 
 
 def report_asset(*parts: str) -> Path:
@@ -194,129 +168,74 @@ def dataset_split_table() -> pd.DataFrame:
 
 
 def experiment_table() -> pd.DataFrame:
+    """Năm cấu hình của giai đoạn cuối kỳ, đo bằng pycocotools trên tập kiểm tra."""
     return pd.DataFrame(
         [
-            {
-                "Mã": "E0",
-                "Cấu hình": "YOLOv8n",
-                "Cách làm / thay đổi": "Mô hình nền, train 30 epoch",
-                "mAP@0.5": 0.9633,
-                "mAP@.5:.95": 0.8068,
-                "FPS": 65.3,
-                "Kết luận": "Mốc tốt nhất về độ chính xác",
-            },
-            {
-                "Mã": "E0",
-                "Cấu hình": "DETR-ResNet50",
-                "Cách làm / thay đổi": "Transformer baseline, 10 epoch",
-                "mAP@0.5": 0.1220,
-                "mAP@.5:.95": 0.0988,
-                "FPS": 15.7,
-                "Kết luận": "Chưa hội tụ, không dùng demo",
-            },
-            {
-                "Mã": "E1",
-                "Cấu hình": "YOLO11n",
-                "Cách làm / thay đổi": "YOLO thế hệ mới, nhẹ hơn YOLOv8n",
-                "mAP@0.5": 0.9252,
-                "mAP@.5:.95": 0.7833,
-                "FPS": 59.0,
-                "Kết luận": "Tốt nhất trong 3 mô hình bổ sung, nhưng kém YOLOv8n",
-            },
-            {
-                "Mã": "E1",
-                "Cấu hình": "SSDLite-MNv3",
-                "Cách làm / thay đổi": "Mobile CNN, 320px, GFLOPs rất thấp",
-                "mAP@0.5": 0.7432,
-                "mAP@.5:.95": 0.6260,
-                "FPS": 57.9,
-                "Kết luận": "Định vị kém, gần như mù với vật thể nhỏ",
-            },
-            {
-                "Mã": "E1",
-                "Cấu hình": "D-FINE-Nano",
-                "Cách làm / thay đổi": "Transformer thế hệ mới, nhẹ hơn DETR",
-                "mAP@0.5": 0.7836,
-                "mAP@.5:.95": 0.6589,
-                "FPS": 25.8,
-                "Kết luận": "Cứu được DETR, nhưng phân loại còn yếu",
-            },
-            {
-                "Mã": "E2",
-                "Cấu hình": "PyTorch FP16",
-                "Cách làm / thay đổi": "Giữ YOLOv8n, đổi số học sang FP16",
-                "mAP@0.5": 0.9633,
-                "mAP@.5:.95": 0.8068,
-                "FPS": 65.3,
-                "Kết luận": "Không mất độ chính xác, giảm khoảng 49% dung lượng",
-            },
-            {
-                "Mã": "E2",
-                "Cấu hình": "ONNX INT8",
-                "Cách làm / thay đổi": "Post-training quantization bằng ONNX",
-                "mAP@0.5": 0.9552,
-                "mAP@.5:.95": 0.7973,
-                "FPS": 5.7,
-                "Kết luận": "Nén tốt nhất, nhưng runtime CPU chậm trong thử nghiệm",
-            },
-            {
-                "Mã": "E2",
-                "Cấu hình": "OpenVINO INT8",
-                "Cách làm / thay đổi": "INT8 qua OpenVINO trên CPU",
-                "mAP@0.5": 0.9265,
-                "mAP@.5:.95": 0.7846,
-                "FPS": 13.9,
-                "Kết luận": "Nhanh hơn ONNX INT8, nhưng mất AP nhỏ nhiều",
-            },
-            {
-                "Mã": "E3",
-                "Cấu hình": "YOLO26n đối chứng",
-                "Cách làm / thay đổi": "Student YOLO26n train thường 50 epoch",
-                "mAP@0.5": 0.9348,
-                "mAP@.5:.95": 0.7773,
-                "FPS": 69.7,
-                "Kết luận": "Đối chứng mạnh, nhưng vẫn dưới YOLOv8n",
-            },
-            {
-                "Mã": "E3",
-                "Cấu hình": "YOLO26n chưng cất",
-                "Cách làm / thay đổi": "Student học từ YOLO26s, dis=6.0",
-                "mAP@0.5": 0.9014,
-                "mAP@.5:.95": 0.7450,
-                "FPS": 74.8,
-                "Kết luận": "Kết quả âm: chưng cất kém đối chứng",
-            },
+            {"Cấu hình": "YOLO26s (thầy)", "Vai trò": "teacher", "Tham số (M)": 9.47,
+             "Tệp (MB)": 19.39, "mAP@0.5": 0.9520, "mAP@.5:.95": 0.7822,
+             "AP nhỏ": 0.616, "AP lớn": 0.859, "FPS": 74.4},
+            {"Cấu hình": "YOLO26n đối chứng", "Vai trò": "student_baseline", "Tham số (M)": 2.38,
+             "Tệp (MB)": 5.15, "mAP@0.5": 0.9348, "mAP@.5:.95": 0.7773,
+             "AP nhỏ": 0.548, "AP lớn": 0.862, "FPS": 69.7},
+            {"Cấu hình": "YOLO26n chưng cất", "Vai trò": "student_kd", "Tham số (M)": 2.38,
+             "Tệp (MB)": 5.15, "mAP@0.5": 0.9014, "mAP@.5:.95": 0.7450,
+             "AP nhỏ": 0.486, "AP lớn": 0.852, "FPS": 74.8},
+            {"Cấu hình": "ONNX FP32 (từ trò KD)", "Vai trò": "student_kd_onnx", "Tham số (M)": None,
+             "Tệp (MB)": 9.35, "mAP@0.5": 0.9079, "mAP@.5:.95": 0.7473,
+             "AP nhỏ": 0.462, "AP lớn": 0.847, "FPS": 19.8},
+            {"Cấu hình": "ONNX INT8 (từ trò KD)", "Vai trò": "student_kd_int8", "Tham số (M)": None,
+             "Tệp (MB)": 2.78, "mAP@0.5": 0.9041, "mAP@.5:.95": 0.7437,
+             "AP nhỏ": 0.437, "AP lớn": 0.839, "FPS": 9.4},
+        ]
+    )
+
+
+def delta_table() -> pd.DataFrame:
+    """Ba phép so sánh cốt lõi — cột AP nhỏ là cột đáng đọc nhất."""
+    return pd.DataFrame(
+        [
+            {"Phép so sánh": "Trò chưng cất so với trò đối chứng",
+             "Δ mAP@0.5": -0.0334, "Δ mAP@.5:.95": -0.0323, "Δ AP nhỏ": -0.0620, "Tỉ số": "1,9×"},
+            {"Phép so sánh": "Trò chưng cất so với thầy",
+             "Δ mAP@0.5": -0.0507, "Δ mAP@.5:.95": -0.0372, "Δ AP nhỏ": -0.1308, "Tỉ số": "2,6×"},
+            {"Phép so sánh": "ONNX INT8 so với ONNX FP32",
+             "Δ mAP@0.5": -0.0038, "Δ mAP@.5:.95": -0.0036, "Δ AP nhỏ": -0.0247, "Tỉ số": "6,5×"},
+        ]
+    )
+
+
+def threshold_table() -> pd.DataFrame:
+    """Năm ngưỡng chấp nhận khai báo TRƯỚC khi chạy thực nghiệm."""
+    return pd.DataFrame(
+        [
+            {"Ngưỡng": "KD không kém đối chứng quá 0,005 điểm", "Giá trị đo": "Δ = −0,0323", "Kết quả": "KHÔNG ĐẠT"},
+            {"Ngưỡng": "KD tốt hơn đối chứng (kỳ vọng ban đầu)", "Giá trị đo": "Δ = −0,0323", "Kết quả": "KHÔNG ĐẠT"},
+            {"Ngưỡng": "INT8 giảm không quá 0,015 điểm so với FP32", "Giá trị đo": "giảm 0,0036", "Kết quả": "ĐẠT"},
+            {"Ngưỡng": "INT8 nhỏ hơn FP32 ít nhất 50%", "Giá trị đo": "giảm 70,3%", "Kết quả": "ĐẠT"},
+            {"Ngưỡng": "Trò chưng cất nhẹ hơn thầy", "Giá trị đo": "5,15 so với 19,39 MB", "Kết quả": "ĐẠT"},
         ]
     )
 
 
 def notebook_source_table() -> pd.DataFrame:
+    """Nguồn số liệu — mọi con số đều truy được về một trong các mục dưới đây."""
     return pd.DataFrame(
         [
-            {
-                "Notebook": "traffic_sign_3models_COLAB.ipynb",
-                "Phần trong báo cáo": "E1 - Ba kiến trúc nhẹ",
-                "Kết quả khớp": "YOLO11n 0.9252, SSDLite 0.7432, D-FINE 0.7836",
-                "Nhận xét": "Khớp với report; chứng minh YOLOv8n vẫn là mốc tốt nhất.",
-            },
-            {
-                "Notebook": "1_traffic_sign_quantization_COLAB.ipynb",
-                "Phần trong báo cáo": "E2 - Lượng tử hoá",
-                "Kết quả khớp": "FP16/ONNX FP32 0.9633, ONNX INT8 0.9552, OpenVINO INT8 0.9265",
-                "Nhận xét": "Khớp với report; INT8 nén mạnh nhưng phụ thuộc runtime.",
-            },
-            {
-                "Notebook": "2_BO_SUNG_OPENVINO_COLAB.ipynb",
-                "Phần trong báo cáo": "E2 - Bổ sung OpenVINO",
-                "Kết quả khớp": "OpenVINO INT8 0.9265, nhanh hơn ONNX INT8 trên CPU",
-                "Nhận xét": "Khớp với report; cần đọc AP vật thể nhỏ khi chọn OpenVINO.",
-            },
-            {
-                "Notebook": "giaidoan2.ipynb",
-                "Phần trong báo cáo": "E3 - Chưng cất tri thức",
-                "Kết quả khớp": "Thầy 0.9520, trò đối chứng 0.9348, trò chưng cất 0.9014",
-                "Nhận xét": "Khớp với report; chưng cất là kết quả âm trong điều kiện dis=6.0.",
-            },
+            {"Nguồn": "notebooks/giaidoan2.ipynb",
+             "Sinh ra": "Toàn bộ bảng kết quả, AP theo kích thước, độ trễ, kiểm toán rò rỉ",
+             "Chế độ": "FULL_TRAIN trên Kaggle Tesla T4, 25/25 ô chạy, 0 lỗi"},
+            {"Nguồn": "src/data/audit_leakage.py",
+             "Sinh ra": "results/metrics/data_leakage.json",
+             "Chế độ": "Tái lập được kết quả rò rỉ của notebook (155 / 101 / 65 / 573)"},
+            {"Nguồn": "src/evaluation/coco_eval.py",
+             "Sinh ra": "results/metrics/<cấu hình>.json + bảng so sánh",
+             "Chế độ": "pycocotools, có tuỳ chọn --clean-only cho 573 ảnh sạch"},
+            {"Nguồn": "src/eda/*",
+             "Sinh ra": "Phân bố lớp, thống kê hộp bao, bản đồ nhiệt",
+             "Chế độ": "Chạy trên CPU, không phụ thuộc mô hình"},
+            {"Nguồn": "scripts/eval_videos.py",
+             "Sinh ra": "results/video_eval/ — kiểm chứng ngoài phân bố",
+             "Chế độ": "Ba video đường thật, không có nhãn"},
         ]
     )
 
@@ -324,15 +243,15 @@ def notebook_source_table() -> pd.DataFrame:
 def selected_model_table(metrics: dict, ckpt: dict) -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"Thuộc tính": "Model dùng demo", "Giá trị": "YOLOv8n PyTorch best.pt"},
+            {"Thuộc tính": "Model dùng demo", "Giá trị": "YOLO26n chưng cất (student_kd)"},
             {"Thuộc tính": "Checkpoint", "Giá trị": display_path(DEFAULT_WEIGHTS)},
-            {"Thuộc tính": "Nguồn", "Giá trị": "outputs mới nhất / YOLO baseline 30 epoch"},
+            {"Thuộc tính": "Nguồn", "Giá trị": "notebooks/giaidoan2.ipynb — 50 chu kỳ, Tesla T4"},
             {"Thuộc tính": "Epoch train", "Giá trị": ckpt.get("epochs", 30)},
-            {"Thuộc tính": "mAP@0.5 test", "Giá trị": f"{metrics.get('map50', 0.953857):.4f}"},
-            {"Thuộc tính": "mAP@0.5:0.95 test", "Giá trị": f"{metrics.get('map50_95', 0.805803):.4f}"},
-            {"Thuộc tính": "Precision / Recall", "Giá trị": f"{metrics.get('precision', 0.9084):.4f} / {metrics.get('recall', 0.9564):.4f}"},
-            {"Thuộc tính": "FPS đo trong output", "Giá trị": f"{metrics.get('fps', 113.2):.1f}"},
-            {"Thuộc tính": "Dung lượng", "Giá trị": f"{metrics.get('model_size_mb', 6.25):.2f} MB"},
+            {"Thuộc tính": "mAP@0.5 test", "Giá trị": f"{metrics.get('map50', 0.9014):.4f}"},
+            {"Thuộc tính": "mAP@0.5:0.95 test", "Giá trị": f"{metrics.get('map50_95', 0.7450):.4f}"},
+            {"Thuộc tính": "AP theo kích thước", "Giá trị": f"AP nhỏ {metrics.get('ap_small', 0.486):.3f} / AP lớn {metrics.get('ap_large', 0.852):.3f}"},
+            {"Thuộc tính": "FPS đo trong output", "Giá trị": f"{metrics.get('fps', 74.8):.1f}"},
+            {"Thuộc tính": "Dung lượng", "Giá trị": f"{metrics.get('model_size_mb', 5.15):.2f} MB"},
         ]
     )
 
@@ -415,10 +334,14 @@ def render_overview_tab() -> None:
     st.subheader("Cách tiếp cận")
     roadmap = pd.DataFrame(
         [
-            {"Giai đoạn": "E0 - Mô hình nền", "Câu hỏi": "Mốc so sánh là bao nhiêu?", "Cách làm": "Train YOLOv8n và DETR-R50"},
-            {"Giai đoạn": "E1 - Kiến trúc nhẹ", "Câu hỏi": "Có model nhẹ hơn mà không kém hơn không?", "Cách làm": "Thử YOLO11n, SSDLite, D-FINE"},
-            {"Giai đoạn": "E2 - Lượng tử hoá", "Câu hỏi": "Có thể nén model tốt nhất mà không train lại không?", "Cách làm": "FP16, ONNX INT8, OpenVINO INT8"},
-            {"Giai đoạn": "E3 - Chưng cất", "Câu hỏi": "Student nhỏ có học được từ teacher lớn không?", "Cách làm": "YOLO26s dạy YOLO26n"},
+            {"Giai đoạn": "Giữa kỳ", "Câu hỏi": "Hai họ kiến trúc lớn khác nhau ra sao?",
+             "Cách làm": "YOLOv8n đối đầu DETR-R50 — xem mid-work/"},
+            {"Giai đoạn": "Cuối kỳ · Nền", "Câu hỏi": "Mốc so sánh của mô hình nhỏ là bao nhiêu?",
+             "Cách làm": "YOLO26s (thầy) và YOLO26n huấn luyện thường (đối chứng)"},
+            {"Giai đoạn": "Cuối kỳ · Chưng cất", "Câu hỏi": "Trò nhỏ có học được từ thầy lớn không?",
+             "Cách làm": "YOLO26s dạy YOLO26n, hệ số 6,0"},
+            {"Giai đoạn": "Cuối kỳ · Lượng tử hoá", "Câu hỏi": "Nén được bao nhiêu, mất gì?",
+             "Cách làm": "Xuất ONNX FP32 rồi INT8, đo AP theo nhóm kích thước"},
         ]
     )
     st.dataframe(roadmap, hide_index=True, width="stretch")
@@ -462,38 +385,52 @@ def render_data_analysis_tab() -> None:
 
 
 def render_experiments_tab() -> None:
-    st.subheader("Các hướng đã thử và kết quả")
-    df = experiment_table()
-    st.dataframe(df, hide_index=True, width="stretch")
+    st.subheader("Năm cấu hình khảo sát")
+    st.dataframe(experiment_table(), hide_index=True, width="stretch")
+    st.caption("Toàn bộ đo bằng pycocotools trên cùng một tập kiểm tra, trong cùng một lượt chạy.")
 
-    st.subheader("Đọc kết quả theo từng thí nghiệm")
+    st.subheader("Ba phép so sánh cốt lõi")
+    st.dataframe(delta_table(), hide_index=True, width="stretch")
+
+    st.info(
+        "**Cột Δ AP nhỏ là cột đáng đọc nhất.** Ở cả ba phép so sánh, mức suy giảm trên "
+        "vật thể nhỏ đều lớn hơn mức suy giảm của mAP tổng — gấp 1,9 lần ở phép chưng cất "
+        "và **gấp 6,5 lần** ở phép lượng tử hoá INT8. Một cấu hình nhìn qua chỉ “mất 0,38 "
+        "điểm mAP” thực chất mất 2,47 điểm ở đúng nhóm quan trọng nhất với biển báo giao thông."
+    )
+
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(
             """
-**E0 - Baseline**
+**Chưng cất tri thức — kết quả âm**
 
-YOLOv8n đạt mAP cao và tốc độ tốt. DETR-R50 thấp vì chưa hội tụ trong 10 epoch, không phải vì transformer chắc chắn kém.
+Trò chưng cất đạt 0,9014, thấp hơn chính nó khi huấn luyện thường (0,9348).
+Cơ chế đã được xác minh là thực sự chạy: cột `train/dis_loss` giảm từ 12,1663
+xuống 1,1608.
 
-**E1 - Kiến trúc nhẹ**
-
-YOLO11n nhẹ hơn nhưng kém YOLOv8n. SSDLite định vị kém với vật thể nhỏ. D-FINE định vị tốt hơn SSDLite nhưng phân loại yếu hơn.
+Nguyên nhân khả dĩ: khoảng cách thầy–trò quá hẹp (1,72 điểm), kích thước lô
+lệch (8 so với 24), hệ số 6,0 chưa quét thử.
 """
         )
     with c2:
         st.markdown(
             """
-**E2 - Lượng tử hoá**
+**Lượng tử hoá — được dung lượng, mất tốc độ**
 
-FP16 gần như không mất độ chính xác. ONNX INT8 nén rất tốt nhưng chậm trong runtime thử nghiệm. OpenVINO INT8 nhanh hơn ONNX INT8 nhưng giảm AP vật thể nhỏ.
+INT8 giảm 70,3% dung lượng, vượt xa ngưỡng 50% đặt ra. Nhưng độ trễ trung vị
+tăng lên 106,90 ms — chậm hơn bản PyTorch gốc tám lần.
 
-**E3 - Chưng cất tri thức**
-
-YOLO26n chưng cất kém hơn YOLO26n đối chứng. Kết quả âm này được giữ lại vì nó chỉ ra điều kiện áp dụng chưa phù hợp.
+Đồ thị ONNX có 410 `DequantizeLinear` so với 206 `QuantizeLinear`: mô hình liên
+tục giải lượng tử hoá về float để tính rồi lượng tử hoá lại.
 """
         )
 
-    st.subheader("Notebook và mức khớp với report")
+    st.subheader("Ngưỡng chấp nhận khai báo trước khi chạy")
+    st.dataframe(threshold_table(), hide_index=True, width="stretch")
+    st.caption("3 đạt / 5. Cả hai ngưỡng không đạt đều thuộc về giả thuyết chưng cất.")
+
+    st.subheader("Nguồn số liệu")
     st.dataframe(notebook_source_table(), hide_index=True, width="stretch")
 
 

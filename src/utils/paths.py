@@ -39,9 +39,22 @@ DATA_PROCESSED = DATA / "processed" / "cardetection"
 DATA_COCO = DATA / "coco"
 
 # ── Weights ──────────────────────────────────────────────────────────────────
+# Bốn cấu hình của giai đoạn cuối kỳ. Trọng số YOLOv8n/DETR của giữa kỳ đã được
+# chuyển sang mid-work/weights/ và không còn tham chiếu từ đây.
 WEIGHTS = REPO_ROOT / "weights"
-WEIGHTS_YOLO = WEIGHTS / "yolo"
-WEIGHTS_DETR = WEIGHTS / "detr"
+WEIGHTS_YOLO26 = WEIGHTS / "yolo26"
+W_TEACHER = WEIGHTS_YOLO26 / "teacher_yolo26s.pt"
+W_BASELINE = WEIGHTS_YOLO26 / "student_baseline_yolo26n.pt"
+W_KD = WEIGHTS_YOLO26 / "student_kd_yolo26n.pt"
+W_KD_INT8 = WEIGHTS_YOLO26 / "student_kd_int8.onnx"
+
+# Vai trò -> đường dẫn, dùng khi lặp qua các cấu hình để đánh giá.
+MODELS = {
+    "teacher": W_TEACHER,
+    "student_baseline": W_BASELINE,
+    "student_kd": W_KD,
+    "student_kd_int8": W_KD_INT8,
+}
 
 # ── Results ──────────────────────────────────────────────────────────────────
 RESULTS = REPO_ROOT / "results"

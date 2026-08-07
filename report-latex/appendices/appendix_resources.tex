@@ -17,8 +17,9 @@ Phụ lục liệt kê tài nguyên và chi tiết kỹ thuật phục vụ vi�
 \textbf{Tài nguyên} & \textbf{Địa chỉ / định danh} \\
 \midrule
 Bộ dữ liệu & \url{https://www.kaggle.com/datasets/pkdarabi/cardetection} \\
-Trọng số mô hình thầy & \texttt{yolo26s.pt} --- Ultralytics, tiền huấn luyện trên COCO \\
-Trọng số mô hình trò & \texttt{yolo26n.pt} --- Ultralytics, tiền huấn luyện trên COCO \\
+Trọng số mô hình thầy & \texttt{weights/yolo26/teacher\_yolo26s.pt} \\
+Trọng số mô hình trò & \texttt{weights/yolo26/student\_\{baseline,kd\}\_yolo26n.pt} \\
+Bản lượng tử hoá & \texttt{weights/yolo26/student\_kd\_int8.onnx} (616 nút lượng tử hoá) \\
 Thư viện phát hiện & Ultralytics YOLO \cite{jocher2023ultralytics} \\
 Bộ tính độ đo & pycocotools trên định dạng COCO \cite{lin2014coco} \\
 Nền tảng học sâu & PyTorch \cite{paszke2019pytorch} \\
@@ -59,28 +60,37 @@ Mười lăm lớp được giữ nguyên theo bộ dữ liệu gốc, không g�
 
 Mỗi bước của quy trình là một mô-đun độc lập, gọi được trực tiếp từ dòng lệnh:
 
-\begin{lstlisting}[language=bash, caption={Các lệnh chạy lại phần phân tích dữ liệu}, label={lst:cmds}]
-# 1. Kiem tra du lieu va dong bo tep cau hinh
+\begin{lstlisting}[language=bash, caption={Các lệnh chạy lại quy trình}, label={lst:cmds}]
+# 1. Kiem tra du lieu, dong bo cau hinh, kiem toan ro ri
 python -m src.data.inspect_dataset --write-configs
-
-# 2. Kiem tra chat luong nhan
 python -m src.data.validate_labels
+python -m src.data.audit_leakage
 
-# 3. Phan tich kham pha du lieu
+# 2. Phan tich kham pha du lieu
 python -m src.eda.class_distribution
 python -m src.eda.bbox_statistics
 python -m src.eda.image_statistics
 python -m src.eda.heatmap_analysis
 
-# 4. Chay bo kiem thu tu dong  (chi can CPU, khoang 1 giay)
-pytest
+# 3. Huan luyen ba giai doan  (can GPU, ~3 gio tren Tesla T4)
+python -m src.compression.distill --stage teacher
+python -m src.compression.distill --stage baseline
+python -m src.compression.distill --stage kd
 
-# 5. Kiem chung tren video duong that (chi can CPU)
+# 4. Xuat ONNX va luong tu hoa INT8
+python -m src.compression.quantize
+
+# 5. Danh gia bang pycocotools, co AP tach theo kich thuoc
+python -m src.data.convert_to_coco
+python -m src.evaluation.coco_eval                 # toan tap kiem tra
+python -m src.evaluation.coco_eval --clean-only    # chi 573 anh khong ro ri
+python -m src.evaluation.speed
+
+# 6. Kiem chung tren video duong that
 python scripts/eval_videos.py --stride 10
 
-# Phan huan luyen, xuat ONNX va danh gia bang pycocotools nam tron trong
-# notebooks/giaidoan2.ipynb  (can GPU, uoc tinh ~3 gio tren Tesla T4).
-# Dat RUN_MODE = "SMOKE_TEST" de chay thu toan bo duong ong trong vai phut.
+# 7. Bo kiem thu tu dong  (chi can CPU)
+pytest
 \end{lstlisting}
 
 \section*{D. Bảng ánh xạ hình vẽ và nguồn dữ liệu}
@@ -106,7 +116,10 @@ Báo cáo chất lượng nhãn     & \texttt{results/tables/data\_quality\_repo
 Ma trận nhầm lẫn            & Thư mục chạy của Ultralytics \\
 Bảng thành phần bộ dữ liệu  & Phân tích bổ sung theo quy ước đặt tên tệp \\
 Toàn bộ bảng kết quả, $AP$ theo kích thước, độ trễ, kiểm toán rò rỉ & \texttt{notebooks/giaidoan2.ipynb} \\
-Kiểm chứng trên video đường thật & \texttt{scripts/eval\_videos.py} $\rightarrow$ \texttt{results/video\_eval/} \\
+Đo lại tại chỗ, tập đầy đủ và tập sạch & \texttt{src/evaluation/coco\_eval.py} $\rightarrow$ \texttt{results/tables/coco\_eval\{,\_clean\}.csv} \\
+Độ trễ đo lại tại chỗ & \texttt{src/evaluation/speed.py} $\rightarrow$ \texttt{results/metrics/speed.json} \\
+Kiểm chứng trên video đường thật & \texttt{scripts/eval\_videos.py} $\rightarrow$ \texttt{results/video\_eval\_yolo26/} \\
+Kiểm toán rò rỉ & \texttt{src/data/audit\_leakage.py} $\rightarrow$ \texttt{results/metrics/data\_leakage.json} \\
 \bottomrule
 \end{tabular}
 \end{table}

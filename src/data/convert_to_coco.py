@@ -1,6 +1,11 @@
-"""Convert the YOLO-TXT dataset to COCO JSON for DETR (plan §8.6) — OWNER: Tu.
+"""Chuyển bộ dữ liệu YOLO-TXT sang COCO JSON để đánh giá bằng pycocotools.
 
-Output: dataset/coco/instances_{train,valid,test}.json
+Kết quả: dataset/coco/instances_{train,valid,test}.json
+
+QUY ƯỚC QUAN TRỌNG: `category_id` ở đây GIỮ NGUYÊN chỉ số lớp của YOLO, tức chạy từ 0.
+Quy ước COCO gốc đánh số từ 1, nên bất kỳ mã nào sinh dự đoán để so với tệp này đều
+phải dùng chỉ số lớp nguyên bản, không cộng thêm. Hằng số
+`src.evaluation.coco_eval.CATEGORY_ID_OFFSET` giữ đúng giao ước đó và có kiểm thử ràng.
 """
 from __future__ import annotations
 

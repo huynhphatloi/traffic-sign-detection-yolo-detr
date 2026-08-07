@@ -37,11 +37,14 @@ nhiên chỉ số tách theo kích thước vật thể cho một bức tranh ho
 Trong năm ngưỡng chấp nhận, ba đạt và hai không đạt, cả hai ngưỡng không đạt đều thuộc về giả
 thuyết chưng cất.
 
-Luận điểm này được kiểm chứng độc lập trên ba đoạn video đường phố ngoài phân bố huấn luyện. Vì
-video không có nhãn thật nên phép kiểm chứng không đo độ chính xác, mà kiểm tra một dự đoán có thể
-sai: nếu điểm yếu thật nằm ở vật thể nhỏ thì việc tăng độ phân giải đầu vào phải làm lộ thêm các
-phát hiện nhỏ một cách chọn lọc. Kết quả đúng như dự đoán --- nhóm vật thể vừa chỉ tăng 1,4 lần
-trong khi hai nhóm nhỏ tăng 6,1 và 6,7 lần.
+Luận điểm này được kiểm chứng theo hai hướng độc lập. Hướng thứ nhất loại bỏ khả năng kết quả là
+tạo tác của dữ liệu bẩn: khi đo lại chỉ trên 573 ảnh kiểm tra không bị rò rỉ, tỉ số giữa mức sụt
+$AP$ nhỏ và mức sụt mAP tổng ở phép chưng cất \emph{tăng} từ 1,85 lên 2,66 lần. Hướng thứ hai dùng
+ba đoạn video đường phố ngoài phân bố huấn luyện. Vì video không có nhãn thật nên phép kiểm chứng
+không đo độ chính xác, mà kiểm tra một dự đoán có thể sai: nếu điểm yếu thật nằm ở vật thể nhỏ thì
+việc tăng độ phân giải đầu vào phải làm lộ thêm các phát hiện nhỏ một cách chọn lọc. Kết quả đúng
+như dự đoán --- mức tăng số phát hiện giảm đơn điệu theo kích thước, lần lượt 13,0 --- 4,3 --- 2,3
+lần ở ba nhóm nhỏ dần, và \emph{giảm} một nửa ở nhóm lớn nhất.
 
 Đóng góp của đề tài không nằm ở một con số mAP cao mà ở hai phát hiện mang tính phương pháp luận.
 Thứ nhất, mAP tổng che giấu gần như hoàn toàn chi phí thật của các phép nén mô hình; chỉ khi tách
@@ -49,8 +52,8 @@ $AP$ theo nhóm kích thước mới thấy được rằng toàn bộ suy giả
 quan trọng nhất với bài toán biển báo, nơi biển ở xa quyết định thời gian phản ứng của xe. Thứ hai,
 phân tích thành phần bộ dữ liệu chỉ ra 38,68\% số ảnh là ảnh cắt cận cảnh kiểu GTSRB khiến phân bố
 kích thước bị lưỡng cực, và kiểm toán rò rỉ phát hiện 10,2\% tập kiểm tra có bản sao trong tập huấn
-luyện. Hạn chế lớn nhất là nhánh chưng cất chạy với kích thước lô nhỏ hơn nhánh đối chứng, một yếu
-tố gây nhiễu chưa được kiểm soát.
+luyện --- trong đó 71,3\% số hộp bao bị rò rỉ thuộc đúng nhóm vật thể nhỏ. Hạn chế lớn nhất là nhánh
+chưng cất chạy với kích thước lô nhỏ hơn nhánh đối chứng, một yếu tố gây nhiễu chưa được kiểm soát.
 
 \vspace{0.5cm}
 \noindent\textbf{Từ khoá:} phát hiện biển báo giao thông, chưng cất tri thức, lượng tử hoá,
